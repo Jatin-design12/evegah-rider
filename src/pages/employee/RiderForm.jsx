@@ -8,7 +8,8 @@ import {
   useParams,
 } from "react-router-dom";
 import EmployeeLayout from "../../components/layouts/EmployeeLayout";
-import { RiderFormProvider, useRiderForm } from "./RiderFormContext";
+import { RiderFormProvider } from "./RiderFormContext";
+import { useRiderForm } from "./useRiderForm";
 
 import useAuth from "../../hooks/useAuth";
 
