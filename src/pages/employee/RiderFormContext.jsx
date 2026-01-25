@@ -345,8 +345,5 @@ export function RiderFormProvider({ children, user, initialDraftId = null }) {
   );
 }
 
-export function useRiderForm() {
-  const ctx = useContext(RiderFormContext);
-  if (!ctx) throw new Error("useRiderForm must be used inside provider");
-  return ctx;
-}
+
+export { RiderFormContext };
