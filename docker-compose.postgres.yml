@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: evegah_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: evegah
+      POSTGRES_USER: evegah
+      POSTGRES_PASSWORD: evegah
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+
+volumes:
+  pgdata:

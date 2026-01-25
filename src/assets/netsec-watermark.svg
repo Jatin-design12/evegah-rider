@@ -1,0 +1,24 @@
+<svg width="440" height="140" viewBox="0 0 440 140" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="NetSecGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1582D1" />
+      <stop offset="100%" stop-color="#0D5EB3" />
+    </linearGradient>
+    <linearGradient id="InfoTechGradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0A4E95" />
+      <stop offset="100%" stop-color="#1A76C6" />
+    </linearGradient>
+  </defs>
+  <text x="0" y="60" font-family="'Segoe UI', 'Poppins', sans-serif" font-size="60" font-weight="700" letter-spacing="1">
+    <tspan fill="url(#NetSecGradient)">Net</tspan>
+    <tspan x="132" fill="url(#NetSecGradient)">Sec</tspan>
+  </text>
+  <text x="0" y="110" font-family="'Segoe UI', 'Poppins', sans-serif" font-size="28" font-weight="600" letter-spacing="0.5" fill="url(#InfoTechGradient)">
+    INFOTECH
+  </text>
+  <circle cx="402" cy="60" r="8" fill="#1582D1" />
+  <circle cx="414" cy="60" r="3" fill="#1582D1" />
+  <path d="M396 60a6 6 0 016-6" stroke="#1582D1" stroke-width="2" stroke-linecap="round" />
+  <path d="M400 60a10 10 0 0110-10" stroke="#0D5EB3" stroke-width="2" stroke-linecap="round" />
+  <path d="M404 60a14 14 0 0114-14" stroke="#1A76C6" stroke-width="2" stroke-linecap="round" />
+</svg>

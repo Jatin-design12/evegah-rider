@@ -1,0 +1,129 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===============================
+   GLOBAL BASE
+================================ */
+body {
+  @apply bg-evegah-bg text-evegah-text;
+  font-family: "Poppins", "Metropolis", system-ui, sans-serif;
+}
+
+/* ===============================
+   TYPOGRAPHY
+================================ */
+h1 {
+  @apply text-2xl font-semibold;
+}
+
+h2 {
+  @apply text-xl font-semibold;
+}
+
+h3 {
+  @apply text-lg font-medium;
+}
+
+p {
+  @apply text-sm text-evegah-muted;
+}
+
+/* ===============================
+   FORM ELEMENTS
+================================ */
+.label {
+  @apply text-sm font-medium text-evegah-text mb-1 block;
+}
+
+.input {
+  @apply w-full rounded-xl border border-evegah-border 
+         bg-white px-4 py-2 text-sm
+         focus:outline-none focus:ring-2 focus:ring-evegah-primary 
+         focus:border-evegah-primary;
+}
+
+.textarea {
+  @apply w-full rounded-xl border border-evegah-border 
+         bg-white px-4 py-2 text-sm resize-none
+         focus:outline-none focus:ring-2 focus:ring-evegah-primary;
+}
+
+.select {
+  @apply w-full rounded-xl border border-evegah-border 
+         bg-white px-4 py-2 text-sm
+         focus:outline-none focus:ring-2 focus:ring-evegah-primary;
+}
+
+/* CHECKBOX / RADIO */
+.checkbox {
+  @apply accent-evegah-primary;
+}
+
+.radio {
+  @apply accent-evegah-primary;
+}
+
+/* ===============================
+   BUTTONS
+================================ */
+.btn-primary {
+  @apply bg-evegah-primary text-white px-6 py-2 rounded-xl text-sm 
+         hover:opacity-90 transition;
+}
+
+.btn-outline {
+  @apply border border-evegah-primary text-evegah-primary 
+         px-6 py-2 rounded-xl text-sm 
+         hover:bg-evegah-primary hover:text-white transition;
+}
+
+.btn-muted {
+  @apply bg-gray-100 text-evegah-text px-6 py-2 rounded-xl text-sm 
+         hover:bg-gray-200 transition;
+}
+
+/* ===============================
+   CARD / CONTAINER
+================================ */
+.card {
+  @apply bg-evegah-card rounded-2xl border border-evegah-border 
+         shadow-card p-6;
+}
+
+/* ===============================
+   ERROR / WARNING / INFO
+================================ */
+.error {
+  @apply text-xs text-red-500 mt-1;
+}
+
+.warning {
+  @apply text-xs text-yellow-600 mt-1;
+}
+
+.info {
+  @apply text-xs text-blue-600 mt-1;
+}
+
+/* ===============================
+   STEP PROGRESS BAR
+================================ */
+.progress-container {
+  @apply w-full h-2 bg-gray-200 rounded-full overflow-hidden;
+}
+
+.progress-bar {
+  @apply h-full bg-evegah-primary transition-all;
+}
+
+/* ===============================
+   UTILITY HELPERS
+================================ */
+.divider {
+  @apply border-t border-evegah-border my-6;
+}
+
+.section {
+  @apply space-y-4;
+}
