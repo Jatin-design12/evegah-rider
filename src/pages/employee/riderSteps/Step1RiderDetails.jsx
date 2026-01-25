@@ -670,7 +670,7 @@ export default function Step1RiderDetails() {
             <input
               type="date"
               className="input"
-              value={formData.dob}
+              value={formData.dob ? (() => { try { return new Date(formData.dob).toISOString().split('T')[0]; } catch { return ''; } })() : ''}
               onChange={(e) => {
                 updateForm({ dob: e.target.value });
                 clearFieldError("dob");
