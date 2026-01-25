@@ -1480,6 +1480,10 @@ app.get("/api/digilocker/callback", async (req, res) => {
         document_id: documentId || "",
         document_mime: inferredDoc?.mime || "",
         document_name: inferredDoc?.filename || "",
+        // Add document_image as a base64 string if the document is an image
+        ...(inferredDoc && inferredDoc.mime && inferredDoc.mime.startsWith("image/") && inferredDoc.buffer
+          ? { document_image: `data:${inferredDoc.mime};base64,${inferredDoc.buffer.toString('base64')}` }
+          : {}),
       },
     });
   } catch (e) {

@@ -31,6 +31,17 @@ const bannerStyles = {
   error: "bg-red-50 border-red-200 text-red-700",
 };
 
+// Add helper to format dob to dd-mm-yyyy
+function formatDobToDDMMYYYY(dob) {
+  if (!dob) return "";
+  const d = new Date(dob);
+  if (isNaN(d)) return dob;
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = d.getFullYear();
+  return `${day}-${month}-${year}`;
+}
+
 export default function Step1RiderDetails() {
   const { formData, updateForm, errors, setErrors, saveDraft } =
     useRiderForm();
@@ -134,27 +145,29 @@ export default function Step1RiderDetails() {
       const aadhaarLast4 = String(data.aadhaar_last4 || "").replace(/\D/g, "").slice(-4);
 
       const currentAadhaarDigits = sanitizeNumericInput(formData.aadhaar, 12);
+      const digilockerFields = {
+        ...(formData.name ? {} : data.name ? { name: String(data.name) } : {}),
+        ...(formData.phone ? {} : data.mobile ? { phone: sanitizeNumericInput(data.mobile, 10) } : {}),
+        ...(formData.dob ? {} : data.dob ? { dob: formatDobToDDMMYYYY(data.dob) } : {}),
+        ...(formData.gender ? {} : data.gender ? { gender: String(data.gender) } : {}),
+        ...(formData.permanentAddress
+          ? {}
+          : data.permanent_address
+            ? { permanentAddress: String(data.permanent_address) }
+            : {}),
+        ...(formData.sameAddress && !formData.temporaryAddress && data.permanent_address
+          ? { temporaryAddress: String(data.permanent_address) }
+          : {}),
+        // If you want to store the raw image, set governmentId here if present
+        ...(data.document_image ? { governmentId: data.document_image } : {}),
+      };
       if (aadhaarDigits && aadhaarDigits.length === 12) {
         updateForm({
           aadhaar: aadhaarDigits,
           aadhaarVerified: true,
-          // Only auto-fill if empty to avoid overwriting typed data.
-          ...(formData.name ? {} : data.name ? { name: String(data.name) } : {}),
-          ...(formData.phone ? {} : data.mobile ? { phone: sanitizeNumericInput(data.mobile, 10) } : {}),
-          ...(formData.dob ? {} : data.dob ? { dob: String(data.dob) } : {}),
-          ...(formData.gender ? {} : data.gender ? { gender: String(data.gender) } : {}),
-          ...(formData.permanentAddress
-            ? {}
-            : data.permanent_address
-              ? { permanentAddress: String(data.permanent_address) }
-              : {}),
-          ...(formData.sameAddress && !formData.temporaryAddress && data.permanent_address
-            ? { temporaryAddress: String(data.permanent_address) }
-            : {}),
+          ...digilockerFields,
         });
       } else {
-        // If server didn't provide full Aadhaar, still mark verified.
-        // If user typed Aadhaar and we have last4, validate match.
         if (currentAadhaarDigits && aadhaarLast4 && currentAadhaarDigits.slice(-4) !== aadhaarLast4) {
           updateForm({ aadhaarVerified: false });
           showBanner("error", "DigiLocker Aadhaar does not match the entered number (last 4 digits mismatch).");
@@ -162,18 +175,7 @@ export default function Step1RiderDetails() {
         }
         updateForm({
           aadhaarVerified: true,
-          ...(formData.name ? {} : data.name ? { name: String(data.name) } : {}),
-          ...(formData.phone ? {} : data.mobile ? { phone: sanitizeNumericInput(data.mobile, 10) } : {}),
-          ...(formData.dob ? {} : data.dob ? { dob: String(data.dob) } : {}),
-          ...(formData.gender ? {} : data.gender ? { gender: String(data.gender) } : {}),
-          ...(formData.permanentAddress
-            ? {}
-            : data.permanent_address
-              ? { permanentAddress: String(data.permanent_address) }
-              : {}),
-          ...(formData.sameAddress && !formData.temporaryAddress && data.permanent_address
-            ? { temporaryAddress: String(data.permanent_address) }
-            : {}),
+          ...digilockerFields,
         });
       }
 
