@@ -44,9 +44,6 @@ export default function Step1RiderDetails() {
   const [aadhaarMessage, setAadhaarMessage] = useState(
     formData.aadhaarVerified ? "Aadhaar already verified." : ""
   );
-  const [otpModalOpen, setOtpModalOpen] = useState(false);
-  const [otpValue, setOtpValue] = useState("");
-  const [otpError, setOtpError] = useState("");
   const [pendingAadhaar, setPendingAadhaar] = useState("");
   const [banner, setBanner] = useState(null);
   const [existingRiderMatch, setExistingRiderMatch] = useState(null);
@@ -294,43 +291,6 @@ export default function Step1RiderDetails() {
     }
   };
 
-  const handleAadhaarVerify = () => {
-    const aadhaarDigits = sanitizeNumericInput(formData.aadhaar, 12);
-
-    if (!aadhaarDigits) {
-      setErrors((prev) => ({
-        ...prev,
-        aadhaar: "Aadhaar number is required",
-      }));
-      setAadhaarStatus("idle");
-      setAadhaarMessage("");
-      return;
-    }
-
-    if (!isValidAadhaarNumber(aadhaarDigits)) {
-      setErrors((prev) => ({
-        ...prev,
-        aadhaar: "Enter a valid 12-digit Aadhaar number",
-      }));
-      setAadhaarStatus("idle");
-      setAadhaarMessage("");
-      updateForm({ aadhaar: aadhaarDigits, aadhaarVerified: false });
-      return;
-    }
-
-    clearFieldError("aadhaar");
-    updateForm({ aadhaar: aadhaarDigits });
-
-    setPendingAadhaar(aadhaarDigits);
-    setOtpValue("");
-    setOtpError("");
-    setAadhaarStatus("awaiting-otp");
-    setAadhaarMessage(
-      "Enter the 6-digit OTP sent to the registered mobile (mock: 123456)."
-    );
-    setOtpModalOpen(true);
-  };
-
   const handleDigiLockerVerify = async () => {
     setDigilocker((prev) => ({ ...prev, verifying: true }));
     digilockerFlowRef.current.completed = false;
@@ -425,42 +385,6 @@ export default function Step1RiderDetails() {
       const msg = String(e?.message || e || "Failed to download DigiLocker document");
       showBanner("error", msg);
     }
-  };
-
-  const handleOtpSubmit = () => {
-    const otpDigits = sanitizeNumericInput(otpValue, 6);
-
-    if (otpDigits.length !== 6) {
-      setOtpError("Enter the 6-digit OTP");
-      return;
-    }
-
-    if (otpDigits !== "123456") {
-      setOtpError("Invalid OTP. Use 123456 for mock verification.");
-      return;
-    }
-
-    updateForm({ aadhaar: pendingAadhaar, aadhaarVerified: true });
-    clearFieldError("aadhaar");
-
-    setAadhaarStatus("verified");
-    setAadhaarMessage("Aadhaar verified successfully (mock).");
-
-    setOtpModalOpen(false);
-    setOtpValue("");
-    setOtpError("");
-    setPendingAadhaar("");
-    showBanner("success", "Aadhaar verified successfully.");
-  };
-
-  const handleOtpCancel = () => {
-    setOtpModalOpen(false);
-    setOtpValue("");
-    setOtpError("");
-    setPendingAadhaar("");
-    setAadhaarStatus("idle");
-    setAadhaarMessage("Aadhaar verification cancelled.");
-    updateForm({ aadhaarVerified: false });
   };
 
   const handleSaveDraft = async () => {
@@ -812,29 +736,24 @@ export default function Step1RiderDetails() {
                 <button
                   type="button"
                   className="btn-primary whitespace-nowrap disabled:opacity-60"
-                  onClick={digilocker.enabled ? handleDigiLockerVerify : handleAadhaarVerify}
+                  onClick={handleDigiLockerVerify}
                   disabled={
                     digilocker.verifying ||
-                    aadhaarStatus === "awaiting-otp" ||
                     formData.aadhaarVerified ||
                     sanitizeNumericInput(formData.aadhaar, 12).length !== 12
                   }
                 >
                   {formData.aadhaarVerified
                     ? "Verified"
-                    : digilocker.enabled
-                      ? (digilocker.verifying ? "Opening..." : "Verify via DigiLocker")
-                      : aadhaarStatus === "awaiting-otp"
-                        ? "OTP Sent"
-                        : "Verify"}
+                    : digilocker.verifying
+                      ? "Opening..."
+                      : "Verify via DigiLocker"}
                 </button>
               </div>
               <p className="text-xs text-gray-500 mt-1">
                 {digilocker.loading
                   ? "Checking DigiLocker configuration..."
-                  : digilocker.enabled
-                    ? "Verification will open DigiLocker login."
-                    : "Mock verification completes after OTP entry."}
+                  : "Verification will open DigiLocker login."}
               </p>
               {errors.aadhaar && <p className="error">{errors.aadhaar}</p>}
               {aadhaarMessage && (
@@ -950,52 +869,6 @@ export default function Step1RiderDetails() {
           </div>
         </div>
       </div>
-
-      {otpModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 space-y-4">
-            <div>
-              <h3 className="text-lg font-semibold">Enter OTP</h3>
-              <p className="text-sm text-gray-500 mt-1">
-                We sent a mock OTP to the registered mobile. Use <span className="font-medium">123456</span> to verify.
-              </p>
-            </div>
-
-            <div>
-              <label className="label">6-digit OTP</label>
-              <input
-                className="input text-center tracking-[0.35em]"
-                value={otpValue}
-                inputMode="numeric"
-                maxLength={6}
-                onChange={(e) => {
-                  setOtpError("");
-                  setOtpValue(sanitizeNumericInput(e.target.value, 6));
-                }}
-                autoFocus
-              />
-              {otpError && <p className="error">{otpError}</p>}
-            </div>
-
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                type="button"
-                className="btn-muted"
-                onClick={handleOtpCancel}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={handleOtpSubmit}
-              >
-                Verify OTP
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {imagePreview?.src ? (
         <div
