@@ -25,6 +25,22 @@ const toDateTimeLocal = (date = new Date()) => {
 };
 
 function RetainRiderInner() {
+        // Auto-select E-Bike ID and Battery ID if not set, when a rider is selected (mimic new ride registration)
+        useEffect(() => {
+          if (formData.isRetainRider && formData.existingRiderId) {
+            // Only set if not already set
+            if (!formData.bikeId && Array.isArray(VEHICLE_ID_OPTIONS) && VEHICLE_ID_OPTIONS.length > 0) {
+              // Find first available vehicle
+              const available = VEHICLE_ID_OPTIONS.find(id => !unavailableVehicleSet.has(normalizeIdForCompare(id)));
+              if (available) updateForm({ bikeId: available });
+            }
+            if (!formData.batteryId && Array.isArray(BATTERY_ID_OPTIONS) && BATTERY_ID_OPTIONS.length > 0) {
+              // Find first available battery
+              const available = BATTERY_ID_OPTIONS.find(id => !unavailableBatterySet.has(normalizeIdForCompare(id)));
+              if (available) updateForm({ batteryId: available });
+            }
+          }
+        }, [formData.isRetainRider, formData.existingRiderId, formData.bikeId, formData.batteryId, VEHICLE_ID_OPTIONS, BATTERY_ID_OPTIONS, unavailableVehicleSet, unavailableBatterySet]);
       // State for completion message
       const [retainSuccess, setRetainSuccess] = useState(false);
 
