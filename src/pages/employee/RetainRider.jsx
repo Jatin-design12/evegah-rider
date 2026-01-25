@@ -26,16 +26,10 @@ const toDateTimeLocal = (date = new Date()) => {
 
 function RetainRiderInner() {
   const { formData, updateForm, resetForm } = useRiderForm();
-    // Set default rentalStart and rentalEnd when a rider is selected and values are empty
+    // Set default rentalStart to now when a rider is selected and value is empty
     useEffect(() => {
-      if (formData.isRetainRider && formData.existingRiderId) {
-        if (!formData.rentalStart) {
-          updateForm({ rentalStart: toDateTimeLocal(new Date()) });
-        }
-        if (!formData.rentalEnd) {
-          // rentalEnd will be auto-calculated by RiderFormContext effect, but set fallback here
-          updateForm({ rentalEnd: toDateTimeLocal(new Date()) });
-        }
+      if (formData.isRetainRider && formData.existingRiderId && !formData.rentalStart) {
+        updateForm({ rentalStart: toDateTimeLocal(new Date()) });
       }
     }, [formData.isRetainRider, formData.existingRiderId]);
   const { user } = useAuth();
@@ -658,8 +652,10 @@ function RetainRiderInner() {
               <p className="text-sm text-gray-500">Update rental plan and accessories.</p>
             </div>
 
+            {/* Rental Details: Sequence as per screenshot */}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                <div>
+              {/* Rental Package */}
+              <div>
                 <label className="label">Rental Package</label>
                 <select
                   className="select"
@@ -672,8 +668,7 @@ function RetainRiderInner() {
                   <option value="monthly">Monthly</option>
                 </select>
               </div>
-
-              
+              {/* Rental Start Date & Time */}
               <div>
                 <label className="label">Rental Start Date &amp; Time</label>
                 <input
@@ -683,24 +678,24 @@ function RetainRiderInner() {
                   onChange={(e) => updateForm({ rentalStart: e.target.value })}
                 />
               </div>
-              
             </div>
-
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-
-                <div>
+              {/* Return Date (auto-calculated, read-only) */}
+              <div>
                 <label className="label">Return Date</label>
                 <input
                   type="datetime-local"
                   className="input"
                   value={formData.rentalEnd || ""}
-                  onChange={(e) => updateForm({ rentalEnd: e.target.value })}
+                  readOnly
+                  tabIndex={-1}
+                  style={{ background: '#f9fafb', cursor: 'not-allowed' }}
                 />
                 <p className="mt-1 text-xs text-gray-500">
                   Auto: calculated from package
                 </p>
               </div>
-
+              {/* Payment Mode */}
               <div>
                 <label className="label">Payment Mode</label>
                 <select
