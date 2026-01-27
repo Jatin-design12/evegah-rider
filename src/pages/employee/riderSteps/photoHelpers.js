@@ -1,6 +1,6 @@
 import { apiFetch } from "../../../config/api";
 
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const TARGET_IMAGE_BYTES = 1.2 * 1024 * 1024;
 const MAX_IMAGE_DIMENSION = 1600;
 const IMAGE_QUALITY_STEPS = [0.85, 0.7, 0.55, 0.4];
@@ -126,6 +126,6 @@ export const buildUploadedPhotoEntry = (file, dataUrl, upload) => ({
 export const validateImageFile = (file) => {
   if (!file) return "No file selected";
   if (!String(file.type || "").startsWith("image/")) return "Please select an image file";
-  if (file.size > MAX_IMAGE_BYTES) return "Image must be 5MB or smaller";
+  if (file.size > MAX_IMAGE_BYTES) return "Image must be 10MB or smaller";
   return "";
 };

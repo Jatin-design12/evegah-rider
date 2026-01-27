@@ -1,3 +1,22 @@
+// Generate unique rider ID: EVM-RDR-{date}-{mob_num}-{vehicle-id}
+function generateRiderUniqueId({ phone, rentalStart, bikeId }) {
+  // date: YYYYMMDD
+  let dateStr = "";
+  if (rentalStart) {
+    try {
+      const d = new Date(rentalStart);
+      dateStr = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+    } catch {
+      dateStr = "";
+    }
+  }
+  // mobile: last 4 digits
+  const mob = String(phone || "").replace(/\D/g, "").slice(-4);
+  // vehicle id: uppercase, no spaces
+  const veh = String(bikeId || "").replace(/\s+/g, "").toUpperCase();
+  if (!dateStr || !mob || !veh) return "";
+  return `EVM-RDR-${dateStr}-${mob}-${veh}`;
+}
 import { createContext, useContext, useEffect, useState } from "react";
 
 import {
@@ -52,7 +71,9 @@ const computeRentalEnd = (rentalStart, rentalPackage) => {
   const pkg = String(rentalPackage || "").toLowerCase();
   const end = new Date(start.getTime());
 
-  if (pkg === "hourly") {
+  if (pkg === "minute") {
+    end.setMinutes(end.getMinutes() + 10);
+  } else if (pkg === "hourly") {
     end.setHours(end.getHours() + 1);
   } else if (pkg === "daily") {
     end.setDate(end.getDate() + 1);
@@ -69,6 +90,7 @@ const computeRentalEnd = (rentalStart, rentalPackage) => {
 };
 
 const PACKAGE_PRICING = {
+  minute: { rentalAmount: 50, securityDeposit: 100 },
   hourly: { rentalAmount: 250, securityDeposit: 300 },
   daily: { rentalAmount: 250, securityDeposit: 300 },
   weekly: { rentalAmount: 1500, securityDeposit: 300 },
@@ -104,10 +126,10 @@ const defaultFormData = {
   rentalStart: "",
   rentalEnd: "",
   rentalEndManual: false,
-  rentalPackage: "daily",
-  rentalAmount: 250,
-  securityDeposit: 300,
-  totalAmount: 550,
+  rentalPackage: "minute",
+  rentalAmount: 50,
+  securityDeposit: 100,
+  totalAmount: 150,
   paymentMode: "cash",
   cashAmount: 550,
   onlineAmount: 0,
@@ -207,6 +229,14 @@ export function RiderFormProvider({ children, user, initialDraftId = null }) {
       if ((touchedStart || touchedPackage) && !touchedEnd) {
         next.rentalEndManual = false;
       }
+
+      // Generate and set unique rider ID if all required fields are present
+      const uniqueId = generateRiderUniqueId({
+        phone: next.phone,
+        rentalStart: next.rentalStart,
+        bikeId: next.bikeId,
+      });
+      next.riderUniqueId = uniqueId;
 
       return next;
     });
@@ -338,6 +368,7 @@ export function RiderFormProvider({ children, user, initialDraftId = null }) {
         draftMeta,
         draftId,
         loadingDraft,
+        generateRiderUniqueId,
       }}
     >
       {children}

@@ -45,7 +45,7 @@ export default function Step2Identity() {
   const [unavailableVehicleIds, setUnavailableVehicleIds] = useState([]);
   const [unavailableBatteryIds, setUnavailableBatteryIds] = useState([]);
 
-  const PACKAGE_OPTIONS = ["hourly", "daily", "weekly", "monthly"];
+  const PACKAGE_OPTIONS = ["minute", "hourly", "daily", "weekly", "monthly"];
   const PAYMENT_OPTIONS = ["cash", "online", "split"];
   const BIKE_MODEL_OPTIONS = ["MINK", "CITY", "KING"];
   const ACCESSORY_OPTIONS = [
@@ -226,9 +226,10 @@ export default function Step2Identity() {
             <label className="label">Rental Package</label>
             <select
               className="select"
-              value={formData.rentalPackage || "daily"}
+              value={formData.rentalPackage || "minute"}
               onChange={(e) => updateForm({ rentalPackage: e.target.value })}
             >
+              <option value="minute">Minute (10 min)</option>
               <option value="hourly">Hourly</option>
               <option value="daily">Daily</option>
               <option value="weekly">Weekly</option>

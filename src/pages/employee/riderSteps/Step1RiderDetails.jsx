@@ -1,3 +1,16 @@
+// Helper to calculate age from DOB
+function calculateAge(dob) {
+  if (!dob) return "";
+  const birthDate = new Date(dob);
+  if (isNaN(birthDate)) return "";
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+}
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Upload } from "lucide-react";
@@ -461,6 +474,11 @@ export default function Step1RiderDetails() {
 
     if (!formData.dob) {
       nextErrors.dob = "Date of birth is required";
+    } else {
+      const age = calculateAge(formData.dob);
+      if (age !== "" && age < 16) {
+        nextErrors.dob = "Rider must be at least 16 years old.";
+      }
     }
 
     if (!formData.gender) {
@@ -673,6 +691,9 @@ export default function Step1RiderDetails() {
                 clearFieldError("dob");
               }}
               max={new Date().toISOString().split("T")[0]}
+              inputMode="numeric"
+              pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}"
+              placeholder="YYYY-MM-DD"
             />
             {errors.dob && <p className="error">{errors.dob}</p>}
           </div>

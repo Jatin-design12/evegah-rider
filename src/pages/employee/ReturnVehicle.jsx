@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import EmployeeLayout from "../../components/layouts/EmployeeLayout";
 import { apiFetch } from "../../config/api";
@@ -18,6 +18,8 @@ export default function ReturnVehicle() {
   const [feedback, setFeedback] = useState("");
   const [photos, setPhotos] = useState([]);
   const [photoInputKey, setPhotoInputKey] = useState(0);
+  const [photoError, setPhotoError] = useState("");
+  const fileInputRef = useRef(null);
 
   const [searching, setSearching] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -26,13 +28,32 @@ export default function ReturnVehicle() {
   const [depositReturnedSelection, setDepositReturnedSelection] = useState(null);
   const [depositSelectionError, setDepositSelectionError] = useState("");
   const [rental, setRental] = useState(null);
+  const [overdueCharge, setOverdueCharge] = useState(0);
+  const [overdueMinutes, setOverdueMinutes] = useState(0);
+  const [extraPayment, setExtraPayment] = useState(0);
+  const [finalDepositRefund, setFinalDepositRefund] = useState(0);
 
   useEffect(() => {
     setDepositReturnedSelection(
       rental ? Boolean(rental.deposit_returned) : null
     );
     setDepositSelectionError("");
+    // Reset extra payment and refund when new rental is loaded
+    setExtraPayment(0);
+    setFinalDepositRefund(0);
   }, [rental]);
+
+  // Calculate final deposit refund whenever deposit, overdue, or extra payment changes
+  useEffect(() => {
+    if (!rental) {
+      setFinalDepositRefund(0);
+      return;
+    }
+    const deposit = Number(rental.deposit_amount ?? 0);
+    const totalDeductions = Number(overdueCharge) + Number(extraPayment);
+    const refund = Math.max(0, deposit - totalDeductions);
+    setFinalDepositRefund(refund);
+  }, [rental, overdueCharge, extraPayment]);
 
   const mobileDigits = useMemo(() => sanitizeNumericInput(mobile, 10), [mobile]);
   const vehicleText = String(vehicleId || "").trim();
@@ -78,6 +99,19 @@ export default function ReturnVehicle() {
         return;
       }
       setRental(found);
+
+      // Overdue charge logic
+      const now = new Date();
+      const rentalEnd = found.rental_end ? new Date(found.rental_end) : null;
+      let overdue = 0;
+      let overdueMins = 0;
+      if (rentalEnd && now > rentalEnd) {
+        overdueMins = Math.ceil((now - rentalEnd) / (1000 * 60));
+        // ₹10 per 10 minutes overdue, minimum ₹10
+        overdue = Math.max(10, Math.ceil(overdueMins / 10) * 10);
+      }
+      setOverdueMinutes(overdueMins);
+      setOverdueCharge(overdue);
     } catch (e) {
       setSearchError(String(e?.message || e || "Unable to search active rental"));
     } finally {
@@ -115,6 +149,9 @@ export default function ReturnVehicle() {
         form.set("feedback", String(feedback).trim());
       }
       form.set("depositReturned", depositReturnedSelection ? "true" : "false");
+      form.set("overdueCharge", String(overdueCharge));
+      form.set("extraPayment", String(extraPayment));
+      form.set("finalDepositRefund", String(finalDepositRefund));
       (Array.isArray(photos) ? photos : []).forEach((file) => {
         form.append("photos", file);
       });
@@ -124,8 +161,16 @@ export default function ReturnVehicle() {
         body: form,
       });
 
-      const refund = Number(result?.depositReturnedAmount ?? 0);
-      alert(refund > 0 ? `Vehicle returned successfully. Deposit returned: ₹${refund}` : "Vehicle returned successfully");
+      const refund = Number(result?.depositReturnedAmount ?? finalDepositRefund);
+      let msg = `Vehicle returned successfully.`;
+      if (overdueCharge > 0) {
+        msg += ` Overdue charge applied: ₹${overdueCharge}.`;
+      }
+      if (extraPayment > 0) {
+        msg += ` Extra payment charged: ₹${extraPayment}.`;
+      }
+      msg += refund > 0 ? ` Deposit returned: ₹${refund}` : " Deposit fully adjusted.";
+      alert(msg);
 
       // Reset
       setRental(null);
@@ -237,6 +282,8 @@ export default function ReturnVehicle() {
                   <p className="text-sm text-evegah-text font-medium">
                     {formatDateTimeDDMMYYYY(rental.start_time, "-")}
                   </p>
+                  <p className="text-xs text-gray-500 mt-1">Scheduled End: {formatDateTimeDDMMYYYY(rental.rental_end, "-")}</p>
+                  <p className="text-xs text-gray-500 mt-1">Actual Return: {formatDateTimeDDMMYYYY(new Date(), "-")}</p>
                 </div>
                 <div>
                   <p className="text-xs text-gray-500">Total</p>
@@ -246,6 +293,15 @@ export default function ReturnVehicle() {
                   <p className="text-xs text-gray-500">Deposit</p>
                   <p className="text-sm text-evegah-text font-medium">{formatCurrency(depositAmountValue)}</p>
                   <p className={`text-xs ${depositStatusClass}`}>{depositStatusLine}</p>
+                  {overdueCharge > 0 ? (
+                    <p className="text-xs text-red-600 mt-2">Overdue: {overdueMinutes} min<br/>Charge: ₹{overdueCharge}</p>
+                  ) : null}
+                  {extraPayment > 0 ? (
+                    <p className="text-xs text-red-600 mt-1">Extra Payment: ₹{extraPayment}</p>
+                  ) : null}
+                  {(overdueCharge > 0 || extraPayment > 0) ? (
+                    <p className="text-xs text-blue-700 mt-1 font-semibold">Deposit Refund: ₹{finalDepositRefund}</p>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -262,16 +318,55 @@ export default function ReturnVehicle() {
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             <div>
-              <label className="label">Upload Return Vehicle Photos</label>
-              <input
-                key={photoInputKey}
-                type="file"
-                accept="image/*"
-                capture="environment"
-                multiple
-                className="input py-2"
-                onChange={(e) => setPhotos(Array.from(e.target.files || []))}
-              />
+              <label className="label">Return Vehicle Photos</label>
+              <div className="flex gap-2 mb-2">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => {
+                    // Live capture: open file input with capture
+                    if (fileInputRef.current) {
+                      fileInputRef.current.setAttribute('capture', 'environment');
+                      fileInputRef.current.click();
+                    }
+                  }}
+                >
+                  Capture Live Photo
+                </button>
+                <button
+                  type="button"
+                  className="btn-outline"
+                  onClick={() => {
+                    // Upload: open file input without capture
+                    if (fileInputRef.current) {
+                      fileInputRef.current.removeAttribute('capture');
+                      fileInputRef.current.click();
+                    }
+                  }}
+                >
+                  Upload Image(s)
+                </button>
+                <input
+                  ref={fileInputRef}
+                  key={photoInputKey}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    setPhotoError("");
+                    const files = Array.from(e.target.files || []);
+                    // 10MB = 10 * 1024 * 1024
+                    const tooLarge = files.find(f => f.size > 10 * 1024 * 1024);
+                    if (tooLarge) {
+                      setPhotoError("Each image must be 10MB or less.");
+                      setPhotos([]);
+                      return;
+                    }
+                    setPhotos(files);
+                  }}
+                />
+              </div>
               {photos.length ? (
                 <div className="mt-2 space-y-2">
                   <div className="flex items-center justify-between gap-2">
@@ -299,8 +394,9 @@ export default function ReturnVehicle() {
                 </div>
               ) : null}
               <p className="mt-1 text-xs text-gray-500">
-                Photos will be uploaded on submit.
+                Photos will be uploaded on submit. Max size: 10MB per image.
               </p>
+              {photoError && <p className="error">{photoError}</p>}
             </div>
 
             <div className="space-y-2">
@@ -332,6 +428,20 @@ export default function ReturnVehicle() {
                 <option value="not-returned">No, deposit not returned</option>
               </select>
               {depositSelectionError ? <p className="error">{depositSelectionError}</p> : null}
+            </div>
+
+            <div className="space-y-2">
+              <label className="label">Extra Payment (damage/other)</label>
+              <input
+                type="number"
+                className="input"
+                min={0}
+                step={1}
+                value={extraPayment}
+                onChange={e => setExtraPayment(Number(e.target.value))}
+                placeholder="Enter extra charge (₹)"
+              />
+              <p className="text-xs text-gray-500">Charge for damage, overdue, or any extra payment.</p>
             </div>
 
             <div className="md:col-span-2">

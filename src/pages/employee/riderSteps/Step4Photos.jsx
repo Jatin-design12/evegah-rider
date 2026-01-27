@@ -406,7 +406,7 @@ export default function Step4Photos() {
                         <span className="ml-2">Upload Photo</span>
                       </button>
                     </div>
-                    <p className="text-xs text-gray-500">Allow camera permission when prompted.</p>
+                   
                   </div>
                 )}
               </div>
@@ -417,15 +417,16 @@ export default function Step4Photos() {
           </div>
 
           <div className="rounded-xl border border-evegah-border bg-gray-50 p-4 space-y-3">
-            <h3 className="font-medium text-evegah-text">Pre-ride Photos (Upload)</h3>
+            <h3 className="font-medium text-evegah-text">Pre-ride Photos</h3>
             <p className="text-sm text-gray-500">
-              Upload photos of the vehicle before handing over to the rider.
+              Take a live photo and/or upload images of the vehicle before handing over to the rider. Max 10MB per image.
             </p>
 
             <input
               ref={preRidePhotosInputRef}
               type="file"
               accept="image/*"
+              capture="environment"
               multiple
               className="hidden"
               onChange={(e) => {
@@ -443,7 +444,7 @@ export default function Step4Photos() {
               <p className="mt-2 font-medium">
                 {preRidePhotos.length > 0 ? "Add more photos" : "Click to upload photos"}
               </p>
-              <p className="text-xs">PNG, JPG, WEBP (max 5MB each, up to 8)</p>
+              <p className="text-xs">PNG, JPG, WEBP (max 10MB each, up to 8)</p>
             </button>
 
             {preRidePhotos.length > 0 ? (

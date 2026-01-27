@@ -57,8 +57,7 @@ export default function Step3Agreement() {
               type="checkbox"
               className="checkbox mt-0.5"
               checked={Boolean(formData.agreementConfirmInfo)}
-              readOnly
-              disabled
+              onChange={e => updateForm({ agreementConfirmInfo: e.target.checked })}
             />
             <span>
               I confirm all information above is true and correct. <span className="text-red-500">*</span>
@@ -114,9 +113,7 @@ export default function Step3Agreement() {
             />
           </div>
 
-          <p className="mt-2 text-xs text-gray-500">
-            Sign in the box above using your mouse or finger.
-          </p>
+         
           {attempted && !formData.riderSignature ? (
             <p className="error">Signature is required.</p>
           ) : null}
@@ -152,7 +149,7 @@ export default function Step3Agreement() {
             onClick={goNext}
             disabled={!isValid}
           >
-            Proceed to Payment →
+            Next →
           </button>
         </div>
       </div>
