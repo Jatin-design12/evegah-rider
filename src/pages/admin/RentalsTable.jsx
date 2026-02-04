@@ -194,11 +194,9 @@ export default function RentalsTable() {
 
   return (
     <div className="h-screen w-full flex bg-white relative overflow-hidden">
-
-      <div className="flex relative z-10">
+      <div className="flex relative z-10 w-full">
         <AdminSidebar />
-
-        <main className="flex-1 w-full p-8 pb-0 overflow-x-hidden">
+        <main className="flex-1 w-full min-w-0 p-8 pb-0 overflow-x-hidden sm:ml-64">
           <div className="flex items-center justify-between mb-8">
             <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 via-purple-600 to-indigo-600 bg-clip-text text-transparent tracking-tight">
               Active Rentals
@@ -214,160 +212,160 @@ export default function RentalsTable() {
             </label>
           </div>
 
-        {/* KPI CARDS */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
-          {[
-            ["Total Rentals", summary.totalRentals, "text-slate-800", FileText],
-            ["Active", summary.activeRentals, "text-green-600", Play],
-            ["Returned", summary.returnedRentals, "text-slate-800", CheckCircle],
-            ["Deposit Total", formatINR(summary.depositTotal), "text-green-600", DollarSign],
-            ["Rent Total", formatINR(summary.rentTotal), "text-slate-800", Receipt],
-          ].map(([label, value, color, Icon]) => (
-            <div key={label} className="group relative overflow-hidden bg-white/70 backdrop-blur-xl rounded-2xl p-6 shadow-xl border border-white/30 hover:shadow-2xl hover:scale-102 transition-all duration-300 cursor-pointer">
-              {/* Floating geometric shapes */}
-              <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-blue-400/20 to-purple-400/20 rounded-full -translate-y-6 translate-x-6 group-hover:scale-110 transition-transform duration-300"></div>
-              <div className="absolute bottom-0 left-0 w-12 h-12 bg-gradient-to-br from-purple-400/20 to-pink-400/20 rounded-xl translate-y-3 -translate-x-3 group-hover:rotate-12 transition-transform duration-300"></div>
+          {/* KPI CARDS */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+            {[
+              ["Total Rentals", summary.totalRentals, "text-slate-800", FileText],
+              ["Active", summary.activeRentals, "text-green-600", Play],
+              ["Returned", summary.returnedRentals, "text-slate-800", CheckCircle],
+              ["Deposit Total", formatINR(summary.depositTotal), "text-green-600", DollarSign],
+              ["Rent Total", formatINR(summary.rentTotal), "text-slate-800", Receipt],
+            ].map(([label, value, color, Icon]) => (
+              <div key={label} className="group relative overflow-hidden bg-white/70 backdrop-blur-xl rounded-2xl p-6 shadow-xl border border-white/30 hover:shadow-2xl hover:scale-102 transition-all duration-300 cursor-pointer">
+                {/* Floating geometric shapes */}
+                <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-blue-400/20 to-purple-400/20 rounded-full -translate-y-6 translate-x-6 group-hover:scale-110 transition-transform duration-300"></div>
+                <div className="absolute bottom-0 left-0 w-12 h-12 bg-gradient-to-br from-purple-400/20 to-pink-400/20 rounded-xl translate-y-3 -translate-x-3 group-hover:rotate-12 transition-transform duration-300"></div>
 
-              <div className="relative z-10">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center shadow-lg group-hover:shadow-xl transition-shadow duration-300">
-                    <Icon className="w-6 h-6" />
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center shadow-lg group-hover:shadow-xl transition-shadow duration-300">
+                      <Icon className="w-6 h-6" />
+                    </div>
+                    <div className="text-2xl opacity-20 group-hover:opacity-60 transition-opacity duration-300 font-bold text-slate-400">
+                      #
+                    </div>
                   </div>
-                  <div className="text-2xl opacity-20 group-hover:opacity-60 transition-opacity duration-300 font-bold text-slate-400">
-                    #
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    {label}
-                  </div>
-                  <div className={`text-2xl font-black ${color} group-hover:text-blue-600 transition-colors duration-300`}>
-                    {value}
+                  <div className="space-y-1">
+                    <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      {label}
+                    </div>
+                    <div className={`text-2xl font-black ${color} group-hover:text-blue-600 transition-colors duration-300`}>
+                      {value}
+                    </div>
                   </div>
                 </div>
               </div>
+            ))}
+          </div>
+
+          {/* SEARCH + FILTER */}
+          <div className="bg-white/70 backdrop-blur-xl border border-white/30 rounded-3xl shadow-xl p-6 flex flex-wrap items-center gap-3 mb-6">
+            <div className="flex items-center bg-slate-100/80 px-4 py-3 rounded-2xl w-full md:w-96">
+              <Search size={18} className="text-slate-600" />
+              <input
+                className="bg-transparent outline-none ml-3 w-full text-base font-normal placeholder-slate-400"
+                placeholder="Search rider, mobile, vehicle, bike, battery, rental id…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
             </div>
-          ))}
-        </div>
 
-        {/* SEARCH + FILTER */}
-        <div className="bg-white/70 backdrop-blur-xl border border-white/30 rounded-3xl shadow-xl p-6 flex flex-wrap items-center gap-3 mb-6">
-          <div className="flex items-center bg-slate-100/80 px-4 py-3 rounded-2xl w-full md:w-96">
-            <Search size={18} className="text-slate-600" />
-            <input
-              className="bg-transparent outline-none ml-3 w-full text-base font-normal placeholder-slate-400"
-              placeholder="Search rider, mobile, vehicle, bike, battery, rental id…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-slate-600">From</label>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="border border-slate-200 rounded-2xl px-3 py-3 text-sm font-medium bg-white/80 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-slate-600">To</label>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="border border-slate-200 rounded-2xl px-3 py-3 text-sm font-medium bg-white/80 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <select
+              className="border border-slate-200 rounded-2xl px-4 py-3 text-base font-medium bg-white/80 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              aria-label="Status filter"
+            >
+              <option value="all">All</option>
+              <option value="active">Active</option>
+              <option value="returned">Returned</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={onExport}
+              className="inline-flex items-center gap-2 px-4 py-3 rounded-2xl bg-blue-600 text-white text-sm font-semibold shadow-lg hover:bg-blue-700"
+            >
+              <Download size={16} />
+              Download CSV
+            </button>
           </div>
 
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-slate-600">From</label>
-            <input
-              type="date"
-              value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
-              className="border border-slate-200 rounded-2xl px-3 py-3 text-sm font-medium bg-white/80 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-slate-600">To</label>
-            <input
-              type="date"
-              value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
-              className="border border-slate-200 rounded-2xl px-3 py-3 text-sm font-medium bg-white/80 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+          {loading ? <div className="text-sm text-gray-500">Loading…</div> : null}
 
-          <select
-            className="border border-slate-200 rounded-2xl px-4 py-3 text-base font-medium bg-white/80 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            aria-label="Status filter"
-          >
-            <option value="all">All</option>
-            <option value="active">Active</option>
-            <option value="returned">Returned</option>
-          </select>
-
-          <button
-            type="button"
-            onClick={onExport}
-            className="inline-flex items-center gap-2 px-4 py-3 rounded-2xl bg-blue-600 text-white text-sm font-semibold shadow-lg hover:bg-blue-700"
-          >
-            <Download size={16} />
-            Download CSV
-          </button>
-        </div>
-
-        {loading ? <div className="text-sm text-gray-500">Loading…</div> : null}
-
-        {/* TABLE */}
-        <div className="bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl border border-white/30 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-base font-normal">
-              <thead className="bg-white/50 backdrop-blur-sm">
-                <tr>
-                {renderSortableTh({ label: "Rider", sortKey: "rider_full_name" })}
-                {renderSortableTh({ label: "Mobile", sortKey: "rider_mobile" })}
-                {/* Vehicle column removed */}
-                {renderSortableTh({ label: "E-Bike ID", sortKey: "bike_id" })}
-                {renderSortableTh({ label: "Battery ID", sortKey: "battery_id" })}
-                {renderSortableTh({ label: "Start", sortKey: "start_time" })}
-                {renderSortableTh({ label: "Expected Return", sortKey: "expected_end_time_value" })}
-                {renderSortableTh({ label: "Returned At", sortKey: "returned_at_value" })}
-                {renderSortableTh({ label: "Status", sortKey: "status_display" })}
-                {renderSortableTh({ label: "Deposit", sortKey: "deposit_value", align: "right" })}
-                {renderSortableTh({ label: "Rent", sortKey: "rent_value", align: "right" })}
-                {renderSortableTh({ label: "Total", sortKey: "total_value", align: "right" })}
-                {renderSortableTh({ label: "Payment", sortKey: "payment_mode_display" })}
-                {renderSortableTh({ label: "Rental ID", sortKey: "rental_id_display" })}
-              </tr>
-            </thead>
-
-            <tbody>
-              {sortedRows.map((r, i) => {
-                const statusTone = r.status_display === "Active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700";
-                return (
-                  <tr key={r.id || i} className="border-t hover:bg-gray-50">
-                    <td className="px-4 py-2">
-                      <div className="font-medium text-gray-900">{r.rider_full_name || "-"}</div>
-                      <div className="text-xs text-gray-500">{r.rider_code || ""}</div>
-                    </td>
-                    <td className="px-4 py-2">{r.rider_mobile || "-"}</td>
+          {/* TABLE */}
+          <div className="bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl border border-white/30 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-base font-normal">
+                <thead className="bg-white/50 backdrop-blur-sm">
+                  <tr>
+                    {renderSortableTh({ label: "Rider", sortKey: "rider_full_name" })}
+                    {renderSortableTh({ label: "Mobile", sortKey: "rider_mobile" })}
                     {/* Vehicle column removed */}
-                    <td className="px-4 py-2">{r.bike_id || "-"}</td>
-                    <td className="px-4 py-2">{r.battery_id || "-"}</td>
-                    <td className="px-4 py-2">{fmtDateTime(r.start_time)}</td>
-                    <td className="px-4 py-2">{fmtDateTime(r.expected_end_time_value)}</td>
-                    <td className="px-4 py-2">{fmtDateTime(r.returned_at_value)}</td>
-                    <td className="px-4 py-2">
-                      <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${statusTone}`}>
-                        {r.status_display}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-right font-semibold text-green-700">{formatINR(r.deposit_value)}</td>
-                    <td className="px-4 py-2 text-right">{formatINR(r.rent_value)}</td>
-                    <td className="px-4 py-2 text-right font-semibold">{formatINR(r.total_value)}</td>
-                    <td className="px-4 py-2">{r.payment_mode_display}</td>
-                    <td className="px-4 py-2">
-                      <span className="text-xs text-gray-600">{r.rental_id_display}</span>
-                    </td>
+                    {renderSortableTh({ label: "E-Bike ID", sortKey: "bike_id" })}
+                    {renderSortableTh({ label: "Battery ID", sortKey: "battery_id" })}
+                    {renderSortableTh({ label: "Start", sortKey: "start_time" })}
+                    {renderSortableTh({ label: "Expected Return", sortKey: "expected_end_time_value" })}
+                    {renderSortableTh({ label: "Returned At", sortKey: "returned_at_value" })}
+                    {renderSortableTh({ label: "Status", sortKey: "status_display" })}
+                    {renderSortableTh({ label: "Deposit", sortKey: "deposit_value", align: "right" })}
+                    {renderSortableTh({ label: "Rent", sortKey: "rent_value", align: "right" })}
+                    {renderSortableTh({ label: "Total", sortKey: "total_value", align: "right" })}
+                    {renderSortableTh({ label: "Payment", sortKey: "payment_mode_display" })}
+                    {renderSortableTh({ label: "Rental ID", sortKey: "rental_id_display" })}
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          </div>
+                </thead>
 
-          {sortedRows.length === 0 && !loading ? (
-            <div className="p-6 text-center text-gray-500">No records found</div>
-          ) : null}
-        </div>
-      </main>
+                <tbody>
+                  {sortedRows.map((r, i) => {
+                    const statusTone = r.status_display === "Active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700";
+                    return (
+                      <tr key={r.id || i} className="border-t hover:bg-gray-50">
+                        <td className="px-4 py-2">
+                          <div className="font-medium text-gray-900">{r.rider_full_name || "-"}</div>
+                          <div className="text-xs text-gray-500">{r.rider_code || ""}</div>
+                        </td>
+                        <td className="px-4 py-2">{r.rider_mobile || "-"}</td>
+                        {/* Vehicle column removed */}
+                        <td className="px-4 py-2">{r.bike_id || "-"}</td>
+                        <td className="px-4 py-2">{r.battery_id || "-"}</td>
+                        <td className="px-4 py-2">{fmtDateTime(r.start_time)}</td>
+                        <td className="px-4 py-2">{fmtDateTime(r.expected_end_time_value)}</td>
+                        <td className="px-4 py-2">{fmtDateTime(r.returned_at_value)}</td>
+                        <td className="px-4 py-2">
+                          <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${statusTone}`}>
+                            {r.status_display}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-right font-semibold text-green-700">{formatINR(r.deposit_value)}</td>
+                        <td className="px-4 py-2 text-right">{formatINR(r.rent_value)}</td>
+                        <td className="px-4 py-2 text-right font-semibold">{formatINR(r.total_value)}</td>
+                        <td className="px-4 py-2">{r.payment_mode_display}</td>
+                        <td className="px-4 py-2">
+                          <span className="text-xs text-gray-600">{r.rental_id_display}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {sortedRows.length === 0 && !loading ? (
+              <div className="p-6 text-center text-gray-500">No records found</div>
+            ) : null}
+          </div>
+        </main>
+      </div>
     </div>
-  </div>
   );
 }

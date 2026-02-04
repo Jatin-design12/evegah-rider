@@ -198,47 +198,46 @@ export default function ReturnsTable() {
   };
 
   return (
-    <div className="admin-viewport h-screen flex bg-white relative overflow-hidden">
-
-      <AdminSidebar />
-
-      <main className="flex-1 overflow-y-auto relative z-10">
-        <div className="p-10 pb-0 space-y-8">
-          {/* Hero Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight mb-2">
-              Returns Management
-            </h1>
-            <p className="text-slate-600 text-base font-normal">
-              Track and manage all vehicle returns and deposit refunds
-            </p>
-          </div>
-
-          <div className="flex items-center justify-end mb-6">
-            <div className="flex flex-wrap items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={onExport}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold shadow-lg hover:bg-blue-700"
-              >
-                <Download size={16} />
-                Download CSV
-              </button>
-
-              <label className="flex items-center gap-3 text-slate-600 font-medium">
-                <input
-                  type="checkbox"
-                  checked={autoRefresh}
-                  onChange={e => setAutoRefresh(e.target.checked)}
-                  className="w-4 h-4 text-blue-600 bg-white/50 border-white/50 rounded focus:ring-blue-500/50"
-                />
-                Auto-refresh
-              </label>
+    <div className="h-screen w-full flex bg-white relative overflow-hidden">
+      <div className="flex relative z-10 w-full">
+        <AdminSidebar />
+        <main className="flex-1 w-full min-w-0 overflow-y-auto relative z-10 p-8 pb-0 overflow-x-hidden sm:ml-64">
+          <div className="p-6 pb-0 space-y-8">
+            {/* Hero Header */}
+            <div className="mb-8">
+              <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight mb-2">
+                Returns Management
+              </h1>
+              <p className="text-slate-600 text-base font-normal">
+                Track and manage all vehicle returns and deposit refunds
+              </p>
             </div>
-          </div>
 
-          {/* SEARCH + FILTER */}
-          <div className="bg-white/70 backdrop-blur-xl border border-white/30 rounded-3xl shadow-xl p-6 flex flex-wrap items-center gap-3">
+            <div className="flex items-center justify-end mb-6">
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={onExport}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold shadow-lg hover:bg-blue-700"
+                >
+                  <Download size={16} />
+                  Download CSV
+                </button>
+
+                <label className="flex items-center gap-3 text-slate-600 font-medium">
+                  <input
+                    type="checkbox"
+                    checked={autoRefresh}
+                    onChange={e => setAutoRefresh(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 bg-white/50 border-white/50 rounded focus:ring-blue-500/50"
+                  />
+                  Auto-refresh
+                </label>
+              </div>
+            </div>
+
+            {/* SEARCH + FILTER */}
+            <div className="bg-white/70 backdrop-blur-xl border border-white/30 rounded-3xl shadow-xl p-6 flex flex-wrap items-center gap-3">
               <div className="flex items-center bg-slate-100/80 px-4 py-3 rounded-2xl w-full md:w-96">
                 <Search size={18} className="text-slate-600" />
                 <input
@@ -278,141 +277,142 @@ export default function ReturnsTable() {
                 <option value="returned">Deposit returned</option>
                 <option value="not_returned">Deposit not returned</option>
               </select>
-          </div>
-
-          {error ? (
-            <div className="rounded-3xl border border-red-200/50 bg-red-50/70 backdrop-blur-xl px-6 py-4 text-sm text-red-700 shadow-lg">
-              {error}
             </div>
-          ) : null}
 
-        {/* KPI CARDS */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {[
-            ["Total Returns", summary.totalReturns, "text-slate-800", Package],
-            ["Deposit Returned", formatINR(summary.depositReturnedTotal), "text-green-600", DollarSign],
-          ].map(([label, value, color, Icon]) => (
-            <div key={label} className="group relative overflow-hidden bg-white/70 backdrop-blur-xl rounded-2xl p-6 shadow-xl border border-white/30 hover:shadow-2xl hover:scale-102 transition-all duration-300 cursor-pointer">
-              {/* Floating geometric shapes */}
-              <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-blue-400/20 to-purple-400/20 rounded-full -translate-y-6 translate-x-6 group-hover:scale-110 transition-transform duration-300"></div>
-              <div className="absolute bottom-0 left-0 w-12 h-12 bg-gradient-to-br from-purple-400/20 to-pink-400/20 rounded-xl translate-y-3 -translate-x-3 group-hover:rotate-12 transition-transform duration-300"></div>
+            {error ? (
+              <div className="rounded-3xl border border-red-200/50 bg-red-50/70 backdrop-blur-xl px-6 py-4 text-sm text-red-700 shadow-lg">
+                {error}
+              </div>
+            ) : null}
 
-              <div className="relative z-10">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center shadow-lg group-hover:shadow-xl transition-shadow duration-300">
-                    <Icon className="w-6 h-6" />
-                  </div>
-                  <div className="text-2xl opacity-20 group-hover:opacity-60 transition-opacity duration-300 font-bold text-slate-400">
-                    #
+            {/* KPI CARDS */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {[
+                ["Total Returns", summary.totalReturns, "text-slate-800", Package],
+                ["Deposit Returned", formatINR(summary.depositReturnedTotal), "text-green-600", DollarSign],
+              ].map(([label, value, color, Icon]) => (
+                <div key={label} className="group relative overflow-hidden bg-white/70 backdrop-blur-xl rounded-2xl p-6 shadow-xl border border-white/30 hover:shadow-2xl hover:scale-102 transition-all duration-300 cursor-pointer">
+                  {/* Floating geometric shapes */}
+                  <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-blue-400/20 to-purple-400/20 rounded-full -translate-y-6 translate-x-6 group-hover:scale-110 transition-transform duration-300"></div>
+                  <div className="absolute bottom-0 left-0 w-12 h-12 bg-gradient-to-br from-purple-400/20 to-pink-400/20 rounded-xl translate-y-3 -translate-x-3 group-hover:rotate-12 transition-transform duration-300"></div>
+
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center shadow-lg group-hover:shadow-xl transition-shadow duration-300">
+                        <Icon className="w-6 h-6" />
+                      </div>
+                      <div className="text-2xl opacity-20 group-hover:opacity-60 transition-opacity duration-300 font-bold text-slate-400">
+                        #
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                        {label}
+                      </div>
+                      <div className={`text-2xl font-black ${color} group-hover:text-blue-600 transition-colors duration-300`}>
+                        {value}
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-                    {label}
-                  </div>
-                  <div className={`text-2xl font-black ${color} group-hover:text-blue-600 transition-colors duration-300`}>
-                    {value}
-                  </div>
+              ))}
+            </div>
+
+            {loading ? (
+              <div className="text-center text-slate-500 py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                Loading…
+              </div>
+            ) : null}
+
+            {/* TABLE */}
+            <div className="bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl border border-white/30 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-base font-normal">
+                  <thead className="bg-white/50 backdrop-blur-sm">
+                    <tr>
+                      {renderSortableTh({ label: "Rider", sortKey: "rider_full_name_display" })}
+                      {renderSortableTh({ label: "Mobile", sortKey: "rider_mobile_display" })}
+                      {renderSortableTh({ label: "Vehicle", sortKey: "vehicle_number" })}
+                      {renderSortableTh({ label: "E-Bike ID", sortKey: "bike_id" })}
+                      {renderSortableTh({ label: "Battery ID", sortKey: "battery_id" })}
+                      {renderSortableTh({ label: "Start", sortKey: "start_time" })}
+                      {renderSortableTh({ label: "Returned At", sortKey: "returned_at" })}
+                      {renderSortableTh({ label: "Deposit", sortKey: "deposit_returned_amount_value" })}
+                      {renderSortableTh({ label: "Condition", sortKey: "condition_notes" })}
+                      {renderSortableTh({ label: "Rental ID", sortKey: "rental_id_display" })}
+                      {renderSortableTh({ label: "Return ID", sortKey: "return_id_display" })}
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {pageRows.map((r, i) => {
+                      const depositTone = r.deposit_returned_amount_value > 0 ? "text-green-700" : "text-slate-600";
+                      return (
+                        <tr key={r.return_id || i} className="border-t border-white/30 hover:bg-white/40 transition-colors duration-200">
+                          <td className="px-6 py-4">
+                            <div className="font-medium text-slate-800">{r.rider_full_name_display}</div>
+                            <div className="text-xs text-slate-500">{r.rider_code || ""}</div>
+                          </td>
+                          <td className="px-6 py-4 text-slate-600">{r.rider_mobile_display}</td>
+                          <td className="px-6 py-4 text-slate-600">{r.vehicle_number || "-"}</td>
+                          <td className="px-6 py-4 text-slate-600">{r.bike_id || "-"}</td>
+                          <td className="px-6 py-4 text-slate-600">{r.battery_id || "-"}</td>
+                          <td className="px-6 py-4 text-slate-600">{fmtDateTime(r.start_time)}</td>
+                          <td className="px-6 py-4 text-slate-600">{fmtDateTime(r.returned_at)}</td>
+                          <td className={`px-6 py-4 font-semibold ${depositTone}`}>
+                            {r.deposit_returned_amount_value > 0 ? formatINR(r.deposit_returned_amount_value) : "-"}
+                          </td>
+                          <td className="px-6 py-4 max-w-md">
+                            <span className="line-clamp-2 text-slate-600">{r.condition_notes || "-"}</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="text-xs text-slate-500 font-medium">{r.rental_id_display}</span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="text-xs text-slate-500 font-medium">{r.return_id_display}</span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {sortedRows.length === 0 && !loading ? (
+                <div className="p-8 text-center text-slate-500">No records found</div>
+              ) : null}
+
+              <div className="px-6 py-4 border-t border-white/30 flex items-center justify-between bg-white/20 backdrop-blur-sm">
+                <div className="text-sm text-slate-600 font-medium">
+                  Page {page} / {totalPages}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="p-3 rounded-2xl border border-white/50 bg-white/50 backdrop-blur-sm hover:bg-white/70 transition-all duration-200 disabled:opacity-50 shadow-lg hover:shadow-xl"
+                    disabled={page <= 1}
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    title="Previous"
+                  >
+                    <ChevronLeft size={16} className="text-slate-600" />
+                  </button>
+                  <button
+                    type="button"
+                    className="p-3 rounded-2xl border border-white/50 bg-white/50 backdrop-blur-sm hover:bg-white/70 transition-all duration-200 disabled:opacity-50 shadow-lg hover:shadow-xl"
+                    disabled={page >= totalPages}
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    title="Next"
+                  >
+                    <ChevronRight size={16} className="text-slate-600" />
+                  </button>
                 </div>
               </div>
             </div>
-          ))}
-        </div>
-
-        {loading ? (
-          <div className="text-center text-slate-500 py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-            Loading…
           </div>
-        ) : null}
-
-        {/* TABLE */}
-        <div className="bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl border border-white/30 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-base font-normal">
-              <thead className="bg-white/50 backdrop-blur-sm">
-                <tr>
-                  {renderSortableTh({ label: "Rider", sortKey: "rider_full_name_display" })}
-                  {renderSortableTh({ label: "Mobile", sortKey: "rider_mobile_display" })}
-                  {renderSortableTh({ label: "Vehicle", sortKey: "vehicle_number" })}
-                  {renderSortableTh({ label: "E-Bike ID", sortKey: "bike_id" })}
-                  {renderSortableTh({ label: "Battery ID", sortKey: "battery_id" })}
-                  {renderSortableTh({ label: "Start", sortKey: "start_time" })}
-                  {renderSortableTh({ label: "Returned At", sortKey: "returned_at" })}
-                  {renderSortableTh({ label: "Deposit", sortKey: "deposit_returned_amount_value" })}
-                  {renderSortableTh({ label: "Condition", sortKey: "condition_notes" })}
-                  {renderSortableTh({ label: "Rental ID", sortKey: "rental_id_display" })}
-                  {renderSortableTh({ label: "Return ID", sortKey: "return_id_display" })}
-                </tr>
-              </thead>
-
-              <tbody>
-                {pageRows.map((r, i) => {
-                  const depositTone = r.deposit_returned_amount_value > 0 ? "text-green-700" : "text-slate-600";
-                  return (
-                    <tr key={r.return_id || i} className="border-t border-white/30 hover:bg-white/40 transition-colors duration-200">
-                      <td className="px-6 py-4">
-                        <div className="font-medium text-slate-800">{r.rider_full_name_display}</div>
-                        <div className="text-xs text-slate-500">{r.rider_code || ""}</div>
-                      </td>
-                      <td className="px-6 py-4 text-slate-600">{r.rider_mobile_display}</td>
-                      <td className="px-6 py-4 text-slate-600">{r.vehicle_number || "-"}</td>
-                      <td className="px-6 py-4 text-slate-600">{r.bike_id || "-"}</td>
-                      <td className="px-6 py-4 text-slate-600">{r.battery_id || "-"}</td>
-                      <td className="px-6 py-4 text-slate-600">{fmtDateTime(r.start_time)}</td>
-                      <td className="px-6 py-4 text-slate-600">{fmtDateTime(r.returned_at)}</td>
-                      <td className={`px-6 py-4 font-semibold ${depositTone}`}>
-                        {r.deposit_returned_amount_value > 0 ? formatINR(r.deposit_returned_amount_value) : "-"}
-                      </td>
-                      <td className="px-6 py-4 max-w-md">
-                        <span className="line-clamp-2 text-slate-600">{r.condition_notes || "-"}</span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-xs text-slate-500 font-medium">{r.rental_id_display}</span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-xs text-slate-500 font-medium">{r.return_id_display}</span>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {sortedRows.length === 0 && !loading ? (
-            <div className="p-8 text-center text-slate-500">No records found</div>
-          ) : null}
-
-          <div className="px-6 py-4 border-t border-white/30 flex items-center justify-between bg-white/20 backdrop-blur-sm">
-            <div className="text-sm text-slate-600 font-medium">
-              Page {page} / {totalPages}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="p-3 rounded-2xl border border-white/50 bg-white/50 backdrop-blur-sm hover:bg-white/70 transition-all duration-200 disabled:opacity-50 shadow-lg hover:shadow-xl"
-                disabled={page <= 1}
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                title="Previous"
-              >
-                <ChevronLeft size={16} className="text-slate-600" />
-              </button>
-              <button
-                type="button"
-                className="p-3 rounded-2xl border border-white/50 bg-white/50 backdrop-blur-sm hover:bg-white/70 transition-all duration-200 disabled:opacity-50 shadow-lg hover:shadow-xl"
-                disabled={page >= totalPages}
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                title="Next"
-              >
-                <ChevronRight size={16} className="text-slate-600" />
-              </button>
-            </div>
-          </div>
-        </div>
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }
