@@ -179,271 +179,272 @@ export default function AdminUsers() {
   };
 
   return (
-    <div className="admin-viewport flex bg-gray-100 min-h-screen">
-      <AdminSidebar />
-
-      <main className="flex-1 p-10 pb-0 space-y-6">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h1 className="text-2xl font-semibold">Users</h1>
-          <button type="button" className="px-4 py-2 rounded-xl border bg-white" onClick={load}>
-            Refresh
-          </button>
-        </div>
-
-        {error ? (
-          <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
-            {error}
-          </div>
-        ) : null}
-
-        <div className="bg-white p-6 rounded-2xl shadow-md space-y-4">
-          <h2 className="text-lg font-semibold">Create User</h2>
-
-          <form onSubmit={handleCreate} className="grid grid-cols-1 gap-4 md:grid-cols-4">
-            <div>
-              <label className="text-sm font-medium text-gray-700">Email *</label>
-              <input
-                className="w-full border rounded-xl px-4 py-2"
-                type="email"
-                value={createForm.email}
-                onChange={(e) => setCreateForm((p) => ({ ...p, email: e.target.value }))}
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700">Password *</label>
-              <input
-                className="w-full border rounded-xl px-4 py-2"
-                type="password"
-                value={createForm.password}
-                onChange={(e) => setCreateForm((p) => ({ ...p, password: e.target.value }))}
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700">Display Name</label>
-              <input
-                className="w-full border rounded-xl px-4 py-2"
-                value={createForm.displayName}
-                onChange={(e) => setCreateForm((p) => ({ ...p, displayName: e.target.value }))}
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700">Role</label>
-              <select
-                className="w-full border rounded-xl px-4 py-2"
-                value={createForm.role}
-                onChange={(e) => setCreateForm((p) => ({ ...p, role: e.target.value }))}
-              >
-                <option value="employee">Employee</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-
-            <div className="md:col-span-4 flex items-center justify-end gap-3">
-              {createError ? <p className="text-sm text-red-600">{createError}</p> : null}
-              <button
-                type="submit"
-                className="px-5 py-2 rounded-xl bg-purple-600 text-white disabled:opacity-60"
-                disabled={creating}
-              >
-                {creating ? "Creating..." : "Create"}
-              </button>
-            </div>
-          </form>
-        </div>
-
-        <div className="bg-white p-6 rounded-2xl shadow-md space-y-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-lg font-semibold">Manage Users</h2>
-            <input
-              className="w-full sm:w-80 border rounded-xl px-4 py-2"
-              placeholder="Search by email/name/uid"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+    <div className="h-screen w-full flex bg-white relative overflow-hidden">
+      <div className="flex relative z-10 w-full">
+        <AdminSidebar />
+        <main className="flex-1 w-full min-w-0 p-8 pb-0 overflow-x-hidden overflow-y-auto sm:ml-64 space-y-6">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <h1 className="text-2xl font-semibold">Users</h1>
+            <button type="button" className="px-4 py-2 rounded-xl border bg-white" onClick={load}>
+              Refresh
+            </button>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-gray-500 border-b">
-                  <th className="py-2 pr-3 font-medium">Email</th>
-                  <th className="py-2 pr-3 font-medium">Name</th>
-                  <th className="py-2 pr-3 font-medium">Role</th>
-                  <th className="py-2 pr-3 font-medium">Status</th>
-                  <th className="py-2 pr-3 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={5} className="py-3 text-gray-500">
-                      Loading users...
-                    </td>
+          {error ? (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
+              {error}
+            </div>
+          ) : null}
+
+          <div className="bg-white p-6 rounded-2xl shadow-md space-y-4">
+            <h2 className="text-lg font-semibold">Create User</h2>
+
+            <form onSubmit={handleCreate} className="grid grid-cols-1 gap-4 md:grid-cols-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700">Email *</label>
+                <input
+                  className="w-full border rounded-xl px-4 py-2"
+                  type="email"
+                  value={createForm.email}
+                  onChange={(e) => setCreateForm((p) => ({ ...p, email: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700">Password *</label>
+                <input
+                  className="w-full border rounded-xl px-4 py-2"
+                  type="password"
+                  value={createForm.password}
+                  onChange={(e) => setCreateForm((p) => ({ ...p, password: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700">Display Name</label>
+                <input
+                  className="w-full border rounded-xl px-4 py-2"
+                  value={createForm.displayName}
+                  onChange={(e) => setCreateForm((p) => ({ ...p, displayName: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700">Role</label>
+                <select
+                  className="w-full border rounded-xl px-4 py-2"
+                  value={createForm.role}
+                  onChange={(e) => setCreateForm((p) => ({ ...p, role: e.target.value }))}
+                >
+                  <option value="employee">Employee</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+
+              <div className="md:col-span-4 flex items-center justify-end gap-3">
+                {createError ? <p className="text-sm text-red-600">{createError}</p> : null}
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-purple-600 text-white disabled:opacity-60"
+                  disabled={creating}
+                >
+                  {creating ? "Creating..." : "Create"}
+                </button>
+              </div>
+            </form>
+          </div>
+
+          <div className="bg-white p-6 rounded-2xl shadow-md space-y-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <h2 className="text-lg font-semibold">Manage Users</h2>
+              <input
+                className="w-full sm:w-80 border rounded-xl px-4 py-2"
+                placeholder="Search by email/name/uid"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-gray-500 border-b">
+                    <th className="py-2 pr-3 font-medium">Email</th>
+                    <th className="py-2 pr-3 font-medium">Name</th>
+                    <th className="py-2 pr-3 font-medium">Role</th>
+                    <th className="py-2 pr-3 font-medium">Status</th>
+                    <th className="py-2 pr-3 font-medium">Actions</th>
                   </tr>
-                ) : filtered.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="py-3 text-gray-500">
-                      No users found.
-                    </td>
-                  </tr>
-                ) : (
-                  filtered.map((u) => (
-                    <tr key={u.uid} className="border-b last:border-b-0">
-                      <td className="py-3 pr-3">{u.email || "-"}</td>
-                      <td className="py-3 pr-3">{u.displayName || "-"}</td>
-                      <td className="py-3 pr-3">{u.role || "employee"}</td>
-                      <td className="py-3 pr-3">
-                        {u.disabled ? (
-                          <span className="text-red-600">Disabled</span>
-                        ) : (
-                          <span className="text-green-700">Active</span>
-                        )}
-                      </td>
-                      <td className="py-3 pr-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            className="px-4 py-2 rounded-xl border hover:bg-gray-50"
-                            onClick={() => openEdit(u)}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            className="px-4 py-2 rounded-xl border border-red-200 text-red-700 hover:bg-red-50"
-                            onClick={() => openDelete(u)}
-                          >
-                            Delete
-                          </button>
-                        </div>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr>
+                      <td colSpan={5} className="py-3 text-gray-500">
+                        Loading users...
                       </td>
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  ) : filtered.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-3 text-gray-500">
+                        No users found.
+                      </td>
+                    </tr>
+                  ) : (
+                    filtered.map((u) => (
+                      <tr key={u.uid} className="border-b last:border-b-0">
+                        <td className="py-3 pr-3">{u.email || "-"}</td>
+                        <td className="py-3 pr-3">{u.displayName || "-"}</td>
+                        <td className="py-3 pr-3">{u.role || "employee"}</td>
+                        <td className="py-3 pr-3">
+                          {u.disabled ? (
+                            <span className="text-red-600">Disabled</span>
+                          ) : (
+                            <span className="text-green-700">Active</span>
+                          )}
+                        </td>
+                        <td className="py-3 pr-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              className="px-4 py-2 rounded-xl border hover:bg-gray-50"
+                              onClick={() => openEdit(u)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="px-4 py-2 rounded-xl border border-red-200 text-red-700 hover:bg-red-50"
+                              onClick={() => openDelete(u)}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
 
-        <Modal
-          open={editOpen}
-          title={editUser ? `Edit User: ${editUser.email || editUser.uid}` : "Edit User"}
-          onClose={() => setEditOpen(false)}
-        >
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <div>
-              <label className="text-sm font-medium text-gray-700">Email</label>
-              <input
-                className="w-full border rounded-xl px-4 py-2"
-                value={editForm.email}
-                onChange={(e) => setEditForm((p) => ({ ...p, email: e.target.value }))}
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700">Display Name</label>
-              <input
-                className="w-full border rounded-xl px-4 py-2"
-                value={editForm.displayName}
-                onChange={(e) => setEditForm((p) => ({ ...p, displayName: e.target.value }))}
-              />
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700">Role</label>
-              <select
-                className="w-full border rounded-xl px-4 py-2"
-                value={editForm.role}
-                onChange={(e) => setEditForm((p) => ({ ...p, role: e.target.value }))}
-              >
-                <option value="employee">Employee</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium text-gray-700">Status</label>
-              <div className="mt-2 flex items-center gap-2">
+          <Modal
+            open={editOpen}
+            title={editUser ? `Edit User: ${editUser.email || editUser.uid}` : "Edit User"}
+            onClose={() => setEditOpen(false)}
+          >
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="text-sm font-medium text-gray-700">Email</label>
                 <input
-                  type="checkbox"
-                  checked={Boolean(editForm.disabled)}
-                  onChange={(e) => setEditForm((p) => ({ ...p, disabled: e.target.checked }))}
+                  className="w-full border rounded-xl px-4 py-2"
+                  value={editForm.email}
+                  onChange={(e) => setEditForm((p) => ({ ...p, email: e.target.value }))}
                 />
-                <span className="text-sm text-gray-700">Disable user</span>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700">Display Name</label>
+                <input
+                  className="w-full border rounded-xl px-4 py-2"
+                  value={editForm.displayName}
+                  onChange={(e) => setEditForm((p) => ({ ...p, displayName: e.target.value }))}
+                />
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700">Role</label>
+                <select
+                  className="w-full border rounded-xl px-4 py-2"
+                  value={editForm.role}
+                  onChange={(e) => setEditForm((p) => ({ ...p, role: e.target.value }))}
+                >
+                  <option value="employee">Employee</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-gray-700">Status</label>
+                <div className="mt-2 flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(editForm.disabled)}
+                    onChange={(e) => setEditForm((p) => ({ ...p, disabled: e.target.checked }))}
+                  />
+                  <span className="text-sm text-gray-700">Disable user</span>
+                </div>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="text-sm font-medium text-gray-700">Set New Password (optional)</label>
+                <input
+                  className="w-full border rounded-xl px-4 py-2"
+                  type="password"
+                  value={editForm.password}
+                  onChange={(e) => setEditForm((p) => ({ ...p, password: e.target.value }))}
+                />
+                <p className="mt-1 text-xs text-gray-500">Leave blank to keep unchanged.</p>
+              </div>
+
+              <div className="md:col-span-2 flex items-center justify-end gap-3">
+                {editError ? <p className="text-sm text-red-600 mr-auto">{editError}</p> : null}
+                <button type="button" className="px-4 py-2 rounded-xl border" onClick={() => setEditOpen(false)}>
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="px-5 py-2 rounded-xl bg-purple-600 text-white disabled:opacity-60"
+                  onClick={handleSaveEdit}
+                  disabled={editSaving}
+                >
+                  {editSaving ? "Saving..." : "Save"}
+                </button>
               </div>
             </div>
+          </Modal>
 
-            <div className="md:col-span-2">
-              <label className="text-sm font-medium text-gray-700">Set New Password (optional)</label>
-              <input
-                className="w-full border rounded-xl px-4 py-2"
-                type="password"
-                value={editForm.password}
-                onChange={(e) => setEditForm((p) => ({ ...p, password: e.target.value }))}
-              />
-              <p className="mt-1 text-xs text-gray-500">Leave blank to keep unchanged.</p>
-            </div>
+          <Modal
+            open={deleteOpen}
+            title={deleteUserTarget ? `Delete User: ${deleteUserTarget.email || deleteUserTarget.uid}` : "Delete User"}
+            onClose={() => {
+              if (deleting) return;
+              setDeleteOpen(false);
+            }}
+          >
+            <div className="space-y-4">
+              <p className="text-sm text-gray-700">
+                This will permanently delete the user from Firebase Authentication.
+              </p>
 
-            <div className="md:col-span-2 flex items-center justify-end gap-3">
-              {editError ? <p className="text-sm text-red-600 mr-auto">{editError}</p> : null}
-              <button type="button" className="px-4 py-2 rounded-xl border" onClick={() => setEditOpen(false)}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="px-5 py-2 rounded-xl bg-purple-600 text-white disabled:opacity-60"
-                onClick={handleSaveEdit}
-                disabled={editSaving}
-              >
-                {editSaving ? "Saving..." : "Save"}
-              </button>
-            </div>
-          </div>
-        </Modal>
+              {deleteError ? (
+                <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
+                  {deleteError}
+                </div>
+              ) : null}
 
-        <Modal
-          open={deleteOpen}
-          title={deleteUserTarget ? `Delete User: ${deleteUserTarget.email || deleteUserTarget.uid}` : "Delete User"}
-          onClose={() => {
-            if (deleting) return;
-            setDeleteOpen(false);
-          }}
-        >
-          <div className="space-y-4">
-            <p className="text-sm text-gray-700">
-              This will permanently delete the user from Firebase Authentication.
-            </p>
-
-            {deleteError ? (
-              <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
-                {deleteError}
+              <div className="flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  className="px-4 py-2 rounded-xl border"
+                  onClick={() => setDeleteOpen(false)}
+                  disabled={deleting}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="px-5 py-2 rounded-xl bg-red-600 text-white disabled:opacity-60"
+                  onClick={handleConfirmDelete}
+                  disabled={deleting}
+                >
+                  {deleting ? "Deleting..." : "Delete"}
+                </button>
               </div>
-            ) : null}
-
-            <div className="flex items-center justify-end gap-3">
-              <button
-                type="button"
-                className="px-4 py-2 rounded-xl border"
-                onClick={() => setDeleteOpen(false)}
-                disabled={deleting}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="px-5 py-2 rounded-xl bg-red-600 text-white disabled:opacity-60"
-                onClick={handleConfirmDelete}
-                disabled={deleting}
-              >
-                {deleting ? "Deleting..." : "Delete"}
-              </button>
             </div>
-          </div>
-        </Modal>
-      </main>
+          </Modal>
+        </main>
+      </div>
     </div>
   );
 }
