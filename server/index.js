@@ -490,7 +490,7 @@ async function autoCreateBatterySwapForRental({ client, rental }) {
     [vehicleNumber, swappedAt]
   );
   const previousBattery = String(prev.rows?.[0]?.battery_in || "").trim();
-  const batteryOut = previousBattery || "UNKNOWN";
+  const batteryOut = previousBattery || "N/A";
 
   await client.query(
     `insert into public.battery_swaps
@@ -1749,6 +1749,12 @@ app.post("/api/whatsapp/send-receipt", async (req, res) => {
       : `v${graphVersionRaw}`;
     const apiUrl = `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(whatsappPhoneNumberId)}/messages`;
 
+    // If we are sending a template with a document header, prefer uploading the PDF to WhatsApp
+    // and using the returned media id. This is more reliable than passing a public link for
+    // template header media across environments.
+    let templateHeaderMediaId = null;
+    let templateHeaderMediaUpload = null;
+
     // Restore template-based sending with document attachment if configured
     const templateName = String(process.env.WHATSAPP_TEMPLATE_NAME || "").trim();
     const templateLanguage = String(process.env.WHATSAPP_TEMPLATE_LANGUAGE || "en_US").trim();
@@ -1782,6 +1788,53 @@ app.post("/api/whatsapp/send-receipt", async (req, res) => {
       to: `91${toDigitsValue}`,
     };
 
+    if (templateName && templateHeaderType === "document") {
+      try {
+        if (!fetchApi) throw new Error("Node fetch API unavailable");
+
+        const hasFormData = typeof FormData !== "undefined";
+        const hasBlob = typeof Blob !== "undefined";
+
+        if (!hasFormData || !hasBlob) {
+          templateHeaderMediaUpload = {
+            ok: false,
+            reason: "FormData/Blob unavailable; cannot upload template header media",
+          };
+        } else {
+          const mediaUploadUrl = `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(
+            whatsappPhoneNumberId
+          )}/media`;
+
+          const form = new FormData();
+          form.append("messaging_product", "whatsapp");
+          form.append("type", "application/pdf");
+          form.append("file", new Blob([pdfBuffer], { type: "application/pdf" }), fileName);
+
+          const uploadRes = await fetchApi(mediaUploadUrl, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${whatsappAccessToken}`,
+            },
+            body: form,
+          });
+          const uploadBody = await uploadRes.json().catch(() => null);
+
+          if (uploadRes.ok && uploadBody?.id) {
+            templateHeaderMediaId = String(uploadBody.id);
+            templateHeaderMediaUpload = { ok: true, id: templateHeaderMediaId };
+          } else {
+            templateHeaderMediaUpload = {
+              ok: false,
+              status: uploadRes.status,
+              detail: uploadBody,
+            };
+          }
+        }
+      } catch (e) {
+        templateHeaderMediaUpload = { ok: false, reason: String(e?.message || e || "Upload failed") };
+      }
+    }
+
     // WhatsApp Cloud API: business-initiated messages generally require a template.
     // If WHATSAPP_TEMPLATE_NAME is provided, we send a template.
     // Header is optional and must match your approved template (common cause of failures).
@@ -1805,7 +1858,7 @@ app.post("/api/whatsapp/send-receipt", async (req, res) => {
                   {
                     type: "document",
                     document: {
-                      link: mediaUrl,
+                      ...(templateHeaderMediaId ? { id: templateHeaderMediaId } : { link: mediaUrl }),
                       filename: fileName,
                     },
                   },
@@ -2111,6 +2164,7 @@ app.post("/api/whatsapp/send-receipt", async (req, res) => {
         },
         mediaUrl,
         mediaCheck,
+        templateHeaderMediaUpload,
       });
     }
 
@@ -2120,6 +2174,7 @@ app.post("/api/whatsapp/send-receipt", async (req, res) => {
       mediaUrl,
       mediaCheck,
       fallback: null,
+      templateHeaderMediaUpload,
       warning: !templateName
         ? "No WhatsApp template configured (WHATSAPP_TEMPLATE_NAME). Business-initiated messages may not be delivered unless the user has an active 24-hour session."
         : null,
@@ -2448,6 +2503,32 @@ app.post("/api/rentals", async (req, res) => {
   try {
     await client.query("begin");
 
+    const activeRideCheck = await client.query(
+      `select r.start_time,
+              coalesce(r.meta->>'expected_end_time','') as expected_end_time
+       from public.rentals r
+       where r.rider_id = $1
+         and not exists (select 1 from public.returns ret where ret.rental_id = r.id)
+       order by r.start_time desc
+       limit 1`,
+      [riderId]
+    );
+    if (activeRideCheck.rows?.length) {
+      const active = activeRideCheck.rows[0];
+      const expectedEnd = String(active?.expected_end_time || "").trim();
+      const startMs = new Date(startTime).getTime();
+      const expectedMs = expectedEnd ? new Date(expectedEnd).getTime() : NaN;
+
+      if (!expectedEnd || !Number.isFinite(expectedMs) || !Number.isFinite(startMs) || startMs < expectedMs) {
+        await client.query("rollback");
+        return res.status(409).json({
+          error: expectedEnd
+            ? `Rider already has an active ride until ${expectedEnd}. Choose a start time after that.`
+            : "Rider already has an active ride. Choose a start time after the active ride ends.",
+        });
+      }
+    }
+
     const availability = await getActiveAvailability({ client });
     const requestedVehicleId = normalizeIdForCompare(body.bike_id || "");
     const requestedVehicleNumber = normalizeIdForCompare(body.vehicle_number || "");
@@ -2625,14 +2706,14 @@ app.patch("/api/rentals/:id", async (req, res) => {
     if (body.payment_mode !== undefined) set.push(`payment_mode = ${push(body.payment_mode || null)}`);
     if (body.bike_model !== undefined) set.push(`bike_model = ${push(body.bike_model || null)}`);
 
-    // expected end time is stored in meta
+    const metaPatch = { ...newRentalMeta };
     if (body.expected_end_time !== undefined || body.end_time !== undefined) {
       const expected = body.expected_end_time !== undefined ? body.expected_end_time : body.end_time;
-      set.push(
-        `meta = coalesce(meta,'{}'::jsonb) || jsonb_build_object('expected_end_time', ${push(
-          expected || null
-        )}::text)`
-      );
+      metaPatch.expected_end_time = expected || null;
+    }
+
+    if (Object.keys(metaPatch).length > 0) {
+      set.push(`meta = coalesce(meta,'{}'::jsonb) || ${push(JSON.stringify(metaPatch))}::jsonb`);
     }
 
     if (set.length === 0) {
@@ -4929,6 +5010,28 @@ app.post("/api/battery-swaps", async (req, res) => {
   try {
     await client.query("begin");
 
+    const swapTime = body.swapped_at ? new Date(body.swapped_at).toISOString() : new Date().toISOString();
+    const riderMatch = await client.query(
+      `select rd.full_name as rider_full_name
+       from public.rentals r
+       left join public.riders rd on rd.id = r.rider_id
+       left join public.returns ret on ret.rental_id = r.id
+       where regexp_replace(lower(coalesce(r.vehicle_number,'')),'[^a-z0-9]+','','g') =
+             regexp_replace(lower($1::text),'[^a-z0-9]+','','g')
+         and r.start_time <= $2::timestamptz
+         and (ret.id is null or ret.returned_at > $2::timestamptz)
+       order by r.start_time desc
+       limit 1`,
+      [String(body.vehicle_number).trim(), swapTime]
+    );
+    const riderName = String(riderMatch.rows?.[0]?.rider_full_name || "").trim();
+    if (!riderName) {
+      await client.query("rollback");
+      return res.status(409).json({
+        error: "No active rider found for this vehicle at the swap time. Update the vehicle and try again.",
+      });
+    }
+
     const { rows } = await client.query(
       `insert into public.battery_swaps
        (employee_uid, employee_email, vehicle_number, battery_out, battery_in, swapped_at, notes)
@@ -4963,8 +5066,37 @@ app.post("/api/battery-swaps", async (req, res) => {
       }
     }
 
+    let responseRow = rows[0] || null;
+    if (batterySwapId) {
+      const { rows: joinedRows } = await client.query(
+        `select s.id, s.created_at, s.swapped_at, s.employee_uid, s.employee_email,
+                s.vehicle_number, s.battery_out, s.battery_in, s.notes,
+                rr.rental_id, rr.rider_id, rr.rider_full_name, rr.rider_mobile
+         from public.battery_swaps s
+         left join lateral (
+           select r.id as rental_id,
+                  rd.id as rider_id,
+                  rd.full_name as rider_full_name,
+                  rd.mobile as rider_mobile
+           from public.rentals r
+           left join public.riders rd on rd.id = r.rider_id
+           left join public.returns ret on ret.rental_id = r.id
+           where regexp_replace(lower(coalesce(r.vehicle_number,'')),'[^a-z0-9]+','','g') =
+                 regexp_replace(lower(coalesce(s.vehicle_number,'')),'[^a-z0-9]+','','g')
+             and r.start_time <= s.swapped_at
+             and (ret.id is null or ret.returned_at > s.swapped_at)
+           order by r.start_time desc
+           limit 1
+         ) rr on true
+         where s.id = $1
+         limit 1`,
+        [batterySwapId]
+      );
+      responseRow = joinedRows?.[0] || responseRow;
+    }
+
     await client.query("commit");
-    res.status(201).json(rows[0]);
+    res.status(201).json(responseRow);
   } catch (error) {
     await client.query("rollback");
     res.status(500).json({ error: String(error?.message || error) });

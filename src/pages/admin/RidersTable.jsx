@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import AdminSidebar from "../../components/admin/AdminSidebar";
 import { apiFetch } from "../../config/api";
 
@@ -7,11 +7,18 @@ import DeleteModal from "./DeleteModal";
 import RiderProfileModal from "./RiderProfileModal";
 
 import { formatDateDDMMYYYY } from "../../utils/dateFormat";
-import { Eye, Edit, Trash2, Download, Users, Bike, UserCheck, UserX, Search } from "lucide-react";
+import { Eye, Edit, Trash2, Users, Bike, UserCheck, UserX, Search, RefreshCw, Download, FileText, Columns } from "lucide-react";
 import { downloadCsv } from "../../utils/downloadCsv";
 import { sortRows, toggleSort } from "../../utils/sortRows";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 export default function RidersTable() {
+  const VISIBLE_COLS_STORAGE_KEY = "evegah.admin.riders.visibleCols.v1";
+  const COLUMNS_SCROLL_STORAGE_KEY = "evegah.admin.riders.columnsDropdownScrollTop.v1";
+  const columnsWrapRef = useRef(null);
+  const columnsListRef = useRef(null);
+
   const [riders, setRiders] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -34,6 +41,29 @@ export default function RidersTable() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [sort, setSort] = useState({ key: "created_at", direction: "desc" });
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [columnsScrollTop, setColumnsScrollTop] = useState(0);
+  const [visibleCols, setVisibleCols] = useState({
+    full_name: true,
+    mobile: true,
+    aadhaar: true,
+    ride_status: true,
+    rider_type: true,
+    created_at: true,
+    actions: true,
+  });
+
+  const columnOptions = [
+    { key: "full_name", label: "Name" },
+    { key: "mobile", label: "Mobile" },
+    { key: "aadhaar", label: "Aadhaar" },
+    { key: "ride_status", label: "Ride" },
+    { key: "rider_type", label: "Type" },
+    { key: "created_at", label: "Created" },
+    { key: "actions", label: "Actions" },
+  ];
 
   // Modals
   const [editItem, setEditItem] = useState(null);
@@ -62,6 +92,78 @@ export default function RidersTable() {
   /* ===================== EFFECTS ===================== */
 
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem(VISIBLE_COLS_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return;
+      setVisibleCols((prev) => ({ ...prev, ...parsed }));
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(COLUMNS_SCROLL_STORAGE_KEY);
+      if (!raw) return;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return;
+      setColumnsScrollTop(n);
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(VISIBLE_COLS_STORAGE_KEY, JSON.stringify(visibleCols));
+    } catch {
+      // ignore
+    }
+  }, [visibleCols]);
+
+  useEffect(() => {
+    const onPointerDown = (e) => {
+      if (!columnsOpen) return;
+      const el = columnsWrapRef.current;
+      if (!el) return;
+      if (el.contains(e.target)) return;
+      setColumnsOpen(false);
+    };
+    const onKeyDown = (e) => {
+      if (!columnsOpen) return;
+      if (e.key === "Escape") setColumnsOpen(false);
+    };
+    const onVisibility = () => {
+      if (document.hidden) setColumnsOpen(false);
+    };
+    const onBlur = () => setColumnsOpen(false);
+
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [columnsOpen]);
+
+  useEffect(() => {
+    if (!columnsOpen) return;
+    requestAnimationFrame(() => {
+      const el = columnsListRef.current;
+      if (!el) return;
+      el.scrollTop = columnsScrollTop;
+    });
+  }, [columnsOpen, columnsScrollTop]);
+
+  useEffect(() => {
     loadRiders();
   }, [loadRiders]);
 
@@ -79,6 +181,10 @@ export default function RidersTable() {
 
     return () => clearInterval(interval);
   }, [autoRefresh, loadRiders, loadStats]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter, typeFilter, fromDate, toDate]);
 
   /* ===================== EXPORT ===================== */
 
@@ -128,6 +234,19 @@ export default function RidersTable() {
     return sortRows(filteredRows, { key: sort?.key, direction: sort?.direction });
   }, [filteredRows, sort]);
 
+  const totalPages = useMemo(() => {
+    return Math.max(1, Math.ceil(sortedRows.length / pageSize));
+  }, [sortedRows.length]);
+
+  const pageRows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return sortedRows.slice(start, start + pageSize);
+  }, [sortedRows, page]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
   const exportRows = (rows, filename) => {
     downloadCsv({
       filename,
@@ -155,6 +274,33 @@ export default function RidersTable() {
     exportRows(sortedRows, `riders_${new Date().toISOString().slice(0, 10)}.csv`);
   };
 
+  const exportPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text("EVegah – Riders Report", 14, 18);
+
+    autoTable(doc, {
+      startY: 26,
+      head: [["Name", "Mobile", "Aadhaar", "Status", "Ride", "Type", "Created"]],
+      body: sortedRows.map((r) => [
+        r.full_name || "-",
+        r.mobile || "-",
+        r.aadhaar || "-",
+        r.status || "-",
+        r.ride_status || "-",
+        r.rider_type || "-",
+        formatDateDDMMYYYY(r.created_at, "-") || "-",
+      ]),
+    });
+
+    doc.save("riders-report.pdf");
+  };
+
+  const handleRefresh = () => {
+    loadStats();
+    loadRiders();
+  };
+
   const statuses = useMemo(() => {
     const set = new Set();
     (riders || []).forEach((r) => {
@@ -180,16 +326,44 @@ export default function RidersTable() {
     return (
       <th
         key={sortKey}
-        className="p-4 font-semibold text-left select-none cursor-pointer"
+        className="px-4 py-3 text-left select-none cursor-pointer text-xs font-semibold uppercase tracking-wider text-slate-700"
         onClick={() => setSort((prev) => toggleSort(prev, sortKey))}
         title="Sort"
       >
         <span className="inline-flex items-center gap-2">
           {label}
-          <span className={`text-xs ${active ? "text-slate-700" : "text-slate-300"}`}>{arrow || "▲"}</span>
+          <span className={`text-xs ${active ? "text-slate-700" : "text-slate-400"}`}>{arrow || "▲"}</span>
         </span>
       </th>
     );
+  };
+
+  const onColumnsScroll = (e) => {
+    const top = e.currentTarget.scrollTop;
+    setColumnsScrollTop(top);
+    try {
+      localStorage.setItem(COLUMNS_SCROLL_STORAGE_KEY, String(top));
+    } catch {
+      // ignore
+    }
+  };
+
+  const toggleColumn = (key) => {
+    setVisibleCols((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const getRideTone = (value) => {
+    const v = String(value || "").toLowerCase();
+    if (v.includes("active") || v.includes("riding")) return "bg-emerald-100 text-emerald-700";
+    if (v.includes("returned") || v.includes("ended")) return "bg-slate-200 text-slate-700";
+    return "bg-amber-100 text-amber-700";
+  };
+
+  const getTypeTone = (value) => {
+    const v = String(value || "").toLowerCase();
+    if (v.includes("retain")) return "bg-indigo-100 text-indigo-700";
+    if (v.includes("new")) return "bg-sky-100 text-sky-700";
+    return "bg-gray-100 text-gray-700";
   };
 
   /* ===================== UI ===================== */
@@ -198,76 +372,66 @@ export default function RidersTable() {
     <div className="h-screen w-full flex bg-white relative overflow-hidden">
       <div className="flex relative z-10 w-full">
         <AdminSidebar />
-        <main className="flex-1 w-full min-w-0 overflow-y-auto relative z-10 p-8 pb-0 overflow-x-hidden sm:ml-64">
+        <main className="flex-1 w-full min-w-0 overflow-y-auto relative z-10 p-10 overflow-x-hidden sm:ml-[var(--admin-sidebar-width,16rem)]">
           <div className="p-0 max-w-full">
             {/* Header */}
-            <div className="mb-8">
-              <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
-                Rider Fleet Management
-              </h1>
-              <p className="text-slate-600 mt-2 text-base font-normal">
-                Oversee your rider network and track performance metrics
-              </p>
+            <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+                  Riders Management
+                </h1>
+                <p className="text-slate-600 mt-2 text-base font-normal">
+                  Oversee your rider network and track performance metrics
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <label className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/70 backdrop-blur border border-white/30 shadow-sm text-sm font-semibold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={autoRefresh}
+                    onChange={(e) => setAutoRefresh(e.target.checked)}
+                    className="h-4 w-4 rounded accent-evegah-primary"
+                  />
+                  <span className="hidden sm:inline">Auto-refresh</span>
+                  <span className="sm:hidden">Auto</span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={handleRefresh}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-evegah-primary to-brand-medium text-white text-sm font-semibold shadow-lg hover:opacity-95 disabled:opacity-60"
+                  disabled={loading}
+                  title="Refresh"
+                >
+                  <RefreshCw size={16} />
+                  <span className="hidden sm:inline">{loading ? "Refreshing…" : "Refresh"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={exportCurrentView}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold shadow-lg hover:opacity-95"
+                  title="Export CSV"
+                >
+                  <Download size={16} />
+                  <span className="hidden sm:inline">Export CSV</span>
+                  <span className="sm:hidden">CSV</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={exportPDF}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-600 text-white text-sm font-semibold shadow-lg hover:opacity-95"
+                  title="Export PDF"
+                >
+                  <FileText size={16} />
+                  <span className="hidden sm:inline">Export PDF</span>
+                  <span className="sm:hidden">PDF</span>
+                </button>
+              </div>
             </div>
-            {/* SEARCH + FILTERS */}
-            <div className="mb-6 bg-white/70 backdrop-blur-xl border border-white/30 rounded-2xl shadow-xl p-4 flex flex-wrap items-center gap-3">
-              <div className="flex items-center bg-slate-100/80 px-4 py-3 rounded-2xl w-full md:w-96">
-                <Search size={18} className="text-slate-600" />
-                <input
-                  className="bg-transparent outline-none ml-3 w-full text-base font-normal placeholder-slate-400"
-                  placeholder="Search name, mobile, aadhaar, status…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-slate-600">From</label>
-                <input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
-                  className="border border-slate-200 rounded-2xl px-3 py-3 text-sm font-medium bg-white/80 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-slate-600">To</label>
-                <input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                  className="border border-slate-200 rounded-2xl px-3 py-3 text-sm font-medium bg-white/80 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <select
-                className="border border-slate-200 rounded-2xl px-4 py-3 text-base font-medium bg-white/80 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                aria-label="Status filter"
-              >
-                <option value="all">All statuses</option>
-                {statuses.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-
-              <select
-                className="border border-slate-200 rounded-2xl px-4 py-3 text-base font-medium bg-white/80 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
-                aria-label="Type filter"
-              >
-                <option value="all">All types</option>
-                {types.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
+            
             {/* SUMMARY */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
               {[
@@ -302,73 +466,145 @@ export default function RidersTable() {
                 </div>
               ))}
             </div>
+              {/* SEARCH + FILTERS */}
+            <div className="relative z-30 mb-6 bg-white/80 backdrop-blur-xl border border-evegah-border rounded-2xl shadow-card p-4 flex flex-wrap items-center gap-4">
+              <div className="flex items-center bg-slate-50 px-4 py-3 rounded-2xl border border-slate-200 w-full md:w-96 focus-within:ring-2 focus-within:ring-evegah-primary/20">
+                <Search size={18} className="text-slate-600" />
+                <input
+                  className="bg-transparent outline-none ml-3 w-full text-base font-normal placeholder-slate-400"
+                  placeholder="Search name, mobile, aadhaar, status…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
 
+              <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-white rounded-2xl text-sm font-semibold border border-slate-200">
+                <span className="text-slate-600">From</span>
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-evegah-primary/20"
+                />
+
+                <span className="text-slate-600">To</span>
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-evegah-primary/20"
+                />
+              </div>
+
+              <select
+                className="border border-slate-200 rounded-2xl px-4 py-3 text-base font-medium bg-white/80 focus:outline-none focus:ring-2 focus:ring-evegah-primary"
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                aria-label="Status filter"
+              >
+                <option value="all">All statuses</option>
+                {statuses.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+
+              <select
+                className="border border-slate-200 rounded-2xl px-4 py-3 text-base font-medium bg-white/80 focus:outline-none focus:ring-2 focus:ring-evegah-primary"
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                aria-label="Type filter"
+              >
+                <option value="all">All types</option>
+                {types.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+
+              <div ref={columnsWrapRef} className="relative ml-auto z-[2000]">
+                <button
+                  type="button"
+                  onClick={() => setColumnsOpen((v) => !v)}
+                  className={`h-12 w-12 rounded-2xl grid place-items-center bg-white border border-slate-200 text-evegah-primary shadow-sm hover:bg-brand-light/60 ${columnsOpen ? "ring-2 ring-evegah-primary/30" : ""}`}
+                  aria-label="Toggle columns"
+                  title="Columns"
+                >
+                  <Columns size={18} />
+                </button>
+                {columnsOpen ? (
+                  <div className="absolute right-0 z-[2000] mt-2 w-56 rounded-2xl border border-slate-200 bg-white shadow-2xl p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+                      Toggle Columns
+                    </p>
+                    <div ref={columnsListRef} onScroll={onColumnsScroll} className="max-h-72 overflow-auto pr-1 space-y-2">
+                      {columnOptions.map((col) => (
+                        <label key={col.key} className="flex items-center gap-2 text-sm text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(visibleCols[col.key])}
+                            onChange={() => toggleColumn(col.key)}
+                            className="rounded"
+                          />
+                          {col.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
             {/* BULK BAR */}
             {selected.length > 0 && (
-              <div className="mb-6 flex gap-4 bg-white/70 backdrop-blur-xl p-4 rounded-2xl shadow-xl border border-white/30">
+              <div className="mb-6 flex flex-wrap gap-3 bg-white/70 backdrop-blur-xl p-4 rounded-2xl shadow-xl border border-white/30">
                 <span className="font-semibold">{selected.length} selected</span>
                 <button
                   type="button"
                   onClick={exportSelected}
-                  className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold shadow-lg hover:bg-blue-700"
+                  className="px-4 py-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold shadow-lg hover:opacity-95"
                 >
                   Export
                 </button>
                 <button
                   type="button"
                   onClick={() => setDeleteItem({ bulk: true, ids: selected })}
-                  className="px-4 py-2 rounded-xl bg-red-600 text-white text-sm font-semibold shadow-lg hover:bg-red-700"
+                  className="px-4 py-2 rounded-2xl bg-gradient-to-r from-red-500 to-rose-600 text-white text-sm font-semibold shadow-lg hover:opacity-95"
                 >
                   Delete
                 </button>
               </div>
             )}
 
-            <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={exportCurrentView}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold shadow-lg hover:bg-blue-700"
-              >
-                <Download size={16} />
-                Export CSV
-              </button>
-
-              <label className="flex items-center gap-3 px-4 py-2 rounded-xl bg-white/70 backdrop-blur-xl border border-white/30 text-sm font-medium text-slate-700 shadow-lg">
-                <input
-                  type="checkbox"
-                  checked={autoRefresh}
-                  onChange={(e) => setAutoRefresh(e.target.checked)}
-                  className="rounded"
-                />
-                Auto-refresh
-              </label>
-            </div>
+            <div className="mb-8" />
 
 
 
             {/* TABLE */}
-            <div className="bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl border border-white/30 overflow-hidden">
+            <div className="bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl border border-white/30 overflow-hidden relative z-0">
               {loading ? (
                 <div className="p-8 text-center">Loading riders…</div>
               ) : sortedRows.length === 0 ? (
                 <div className="p-8 text-center">No riders found</div>
               ) : (
                 <table className="w-full text-sm font-medium">
-                  <thead className="bg-blue-50/70">
+                  <thead className="bg-slate-100">
                     <tr>
-                      <th className="p-4 font-semibold text-left" />
-                      {renderSortableTh({ label: "Name", sortKey: "full_name" })}
-                      {renderSortableTh({ label: "Mobile", sortKey: "mobile" })}
-                      {renderSortableTh({ label: "Aadhaar", sortKey: "aadhaar" })}
-                      {renderSortableTh({ label: "Ride", sortKey: "ride_status" })}
-                      {renderSortableTh({ label: "Type", sortKey: "rider_type" })}
-                      {renderSortableTh({ label: "Created", sortKey: "created_at" })}
-                      <th className="p-4 font-semibold text-left">Actions</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700" />
+                      {visibleCols.full_name ? renderSortableTh({ label: "Name", sortKey: "full_name" }) : null}
+                      {visibleCols.mobile ? renderSortableTh({ label: "Mobile", sortKey: "mobile" }) : null}
+                      {visibleCols.aadhaar ? renderSortableTh({ label: "Aadhaar", sortKey: "aadhaar" }) : null}
+                      {visibleCols.ride_status ? renderSortableTh({ label: "Ride", sortKey: "ride_status" }) : null}
+                      {visibleCols.rider_type ? renderSortableTh({ label: "Type", sortKey: "rider_type" }) : null}
+                      {visibleCols.created_at ? renderSortableTh({ label: "Created", sortKey: "created_at" }) : null}
+                      {visibleCols.actions ? (
+                        <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">Actions</th>
+                      ) : null}
                     </tr>
                   </thead>
                   <tbody>
-                    {sortedRows.map((r) => (
+                    {pageRows.map((r) => (
                       <tr key={r.id} className="border-t hover:bg-slate-50/50 transition-colors">
                         <td className="p-4">
                           <input
@@ -383,30 +619,80 @@ export default function RidersTable() {
                             }
                           />
                         </td>
-                        <td className="p-4">{r.full_name}</td>
-                        <td className="p-4">{r.mobile}</td>
-                        <td className="p-4">{r.aadhaar}</td>
-                        <td className="p-4">{r.ride_status || "-"}</td>
-                        <td className="p-4">{r.rider_type || "-"}</td>
-                        <td className="p-4">
-                          {formatDateDDMMYYYY(r.created_at, "-")}
-                        </td>
-                        <td className="p-4 flex gap-2">
-                          <button onClick={() => setViewItem(r)} className="p-2 rounded-lg hover:bg-slate-100 transition-colors">
-                            <Eye size={16} />
-                          </button>
-                          <button onClick={() => setEditItem(r)} className="p-2 rounded-lg hover:bg-slate-100 transition-colors">
-                            <Edit size={16} />
-                          </button>
-                          <button onClick={() => setDeleteItem(r)} className="p-2 rounded-lg hover:bg-red-100 text-red-600 transition-colors">
-                            <Trash2 size={16} />
-                          </button>
-                        </td>
+                        {visibleCols.full_name ? <td className="p-4">{r.full_name}</td> : null}
+                        {visibleCols.mobile ? <td className="p-4">{r.mobile}</td> : null}
+                        {visibleCols.aadhaar ? <td className="p-4">{r.aadhaar}</td> : null}
+                        {visibleCols.ride_status ? (
+                          <td className="p-4">
+                            <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${getRideTone(r.ride_status)}`}>
+                              {r.ride_status || "-"}
+                            </span>
+                          </td>
+                        ) : null}
+                        {visibleCols.rider_type ? (
+                          <td className="p-4">
+                            <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${getTypeTone(r.rider_type)}`}>
+                              {r.rider_type || "-"}
+                            </span>
+                          </td>
+                        ) : null}
+                        {visibleCols.created_at ? (
+                          <td className="p-4">{formatDateDDMMYYYY(r.created_at, "-")}</td>
+                        ) : null}
+                        {visibleCols.actions ? (
+                          <td className="p-4 flex gap-2">
+                            <button
+                              onClick={() => setViewItem(r)}
+                              className="p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                              title="View"
+                            >
+                              <Eye size={16} />
+                            </button>
+                            <button
+                              onClick={() => setEditItem(r)}
+                              className="p-2 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 transition-colors"
+                              title="Edit"
+                            >
+                              <Edit size={16} />
+                            </button>
+                            <button
+                              onClick={() => setDeleteItem(r)}
+                              className="p-2 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors"
+                              title="Delete"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </td>
+                        ) : null}
                       </tr>
                     ))}
                   </tbody>
                 </table>
               )}
+            </div>
+
+            <div className="mt-4 flex items-center justify-between">
+              <div className="text-sm text-slate-600 font-medium">Page {page} / {totalPages}</div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  className="px-5 py-3 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all disabled:opacity-50"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  title="Previous"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  className="px-5 py-3 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all disabled:opacity-50"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  title="Next"
+                >
+                  Next
+                </button>
+              </div>
             </div>
           </div>
         </main>

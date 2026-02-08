@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AdminSidebar from "../../components/admin/AdminSidebar";
 import { apiFetch } from "../../config/api";
-import { ChevronLeft, ChevronRight, Package, DollarSign, Search, Download } from "lucide-react";
+import { ChevronLeft, ChevronRight, Package, DollarSign, Search, Download, RefreshCw, Columns } from "lucide-react";
 import { formatRentalId, formatReturnId } from "../../utils/entityId";
 import { formatDateTimeDDMMYYYY } from "../../utils/dateFormat";
 import { downloadCsv } from "../../utils/downloadCsv";
@@ -9,6 +9,11 @@ import { sortRows, toggleSort } from "../../utils/sortRows";
 
 
 export default function ReturnsTable() {
+  const VISIBLE_COLS_STORAGE_KEY = "evegah.admin.returns.visibleCols.v1";
+  const COLUMNS_SCROLL_STORAGE_KEY = "evegah.admin.returns.columnsDropdownScrollTop.v1";
+  const columnsWrapRef = useRef(null);
+  const columnsListRef = useRef(null);
+
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -20,6 +25,33 @@ export default function ReturnsTable() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [sort, setSort] = useState({ key: "returned_at", direction: "desc" });
+  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [columnsScrollTop, setColumnsScrollTop] = useState(0);
+  const [visibleCols, setVisibleCols] = useState({
+    rider_full_name_display: true,
+    rider_mobile_display: true,
+    bike_id: true,
+    battery_id: true,
+    start_time: true,
+    returned_at: true,
+    deposit_returned_amount_value: true,
+    condition_notes: true,
+    rental_id_display: true,
+    return_id_display: true,
+  });
+
+  const columnOptions = [
+    { key: "rider_full_name_display", label: "Rider" },
+    { key: "rider_mobile_display", label: "Mobile" },
+    { key: "bike_id", label: "E-Bike ID" },
+    { key: "battery_id", label: "Battery ID" },
+    { key: "start_time", label: "Start" },
+    { key: "returned_at", label: "Returned At" },
+    { key: "deposit_returned_amount_value", label: "Deposit" },
+    { key: "condition_notes", label: "Condition" },
+    { key: "rental_id_display", label: "Rental ID" },
+    { key: "return_id_display", label: "Return ID" },
+  ];
 
   const load = async ({ showLoading } = {}) => {
     if (showLoading) setLoading(true);
@@ -49,6 +81,78 @@ export default function ReturnsTable() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoRefresh]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(VISIBLE_COLS_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return;
+      setVisibleCols((prev) => ({ ...prev, ...parsed }));
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(COLUMNS_SCROLL_STORAGE_KEY);
+      if (!raw) return;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return;
+      setColumnsScrollTop(n);
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(VISIBLE_COLS_STORAGE_KEY, JSON.stringify(visibleCols));
+    } catch {
+      // ignore
+    }
+  }, [visibleCols]);
+
+  useEffect(() => {
+    const onPointerDown = (e) => {
+      if (!columnsOpen) return;
+      const el = columnsWrapRef.current;
+      if (!el) return;
+      if (el.contains(e.target)) return;
+      setColumnsOpen(false);
+    };
+    const onKeyDown = (e) => {
+      if (!columnsOpen) return;
+      if (e.key === "Escape") setColumnsOpen(false);
+    };
+    const onVisibility = () => {
+      if (document.hidden) setColumnsOpen(false);
+    };
+    const onBlur = () => setColumnsOpen(false);
+
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [columnsOpen]);
+
+  useEffect(() => {
+    if (!columnsOpen) return;
+    requestAnimationFrame(() => {
+      const el = columnsListRef.current;
+      if (!el) return;
+      el.scrollTop = columnsScrollTop;
+    });
+  }, [columnsOpen, columnsScrollTop]);
 
   useEffect(() => {
     setPage(1);
@@ -85,11 +189,10 @@ export default function ReturnsTable() {
     return `₹${safe.toLocaleString("en-IN")}`;
   };
 
-  const rows = useMemo(() => {
+  const baseRows = useMemo(() => {
     return (data || []).map((r) => {
       const depositReturned = Boolean(r?.deposit_returned);
       const depositReturnedAmount = Number(r?.deposit_returned_amount || 0);
-      const rentalIdDisplay = formatRentalId(r?.rental_id);
       const returnIdDisplay = formatReturnId(r?.return_id);
       return {
         ...r,
@@ -97,11 +200,41 @@ export default function ReturnsTable() {
         rider_mobile_display: r?.rider_mobile || "-",
         deposit_returned_display: depositReturned ? "Returned" : "-",
         deposit_returned_amount_value: depositReturned ? depositReturnedAmount : 0,
-        rental_id_display: rentalIdDisplay,
         return_id_display: returnIdDisplay,
       };
     });
   }, [data]);
+
+  const rentalIdMap = useMemo(() => {
+    const map = new Map();
+    const byRider = new Map();
+
+    baseRows.forEach((r) => {
+      const key = String(r?.rider_id || r?.rider_mobile || r?.rider_code || "").trim();
+      if (!key) return;
+      const list = byRider.get(key) || [];
+      list.push(r);
+      byRider.set(key, list);
+    });
+
+    byRider.forEach((list) => {
+      const sorted = [...list].sort((a, b) => Date.parse(a?.start_time || "") - Date.parse(b?.start_time || ""));
+      sorted.forEach((ride, index) => {
+        const seq = index + 1;
+        const type = seq === 1 ? "NR" : "RR";
+        map.set(String(ride?.rental_id || ""), `EVR-${type}_${seq}`);
+      });
+    });
+
+    return map;
+  }, [baseRows]);
+
+  const rows = useMemo(() => {
+    return baseRows.map((r) => ({
+      ...r,
+      rental_id_display: rentalIdMap.get(String(r?.rental_id || "")) || formatRentalId(r?.rental_id),
+    }));
+  }, [baseRows, rentalIdMap]);
 
   const filteredRows = useMemo(() => {
     const q = String(search || "").trim().toLowerCase();
@@ -119,7 +252,6 @@ export default function ReturnsTable() {
         r?.rider_full_name_display,
         r?.rider_mobile_display,
         r?.rider_code,
-        r?.vehicle_number,
         r?.bike_id,
         r?.battery_id,
         r?.condition_notes,
@@ -164,7 +296,6 @@ export default function ReturnsTable() {
         { key: "rider_full_name_display", header: "Rider" },
         { key: "rider_code", header: "Rider Code" },
         { key: "rider_mobile_display", header: "Mobile" },
-        { key: "vehicle_number", header: "Vehicle" },
         { key: "bike_id", header: "E-Bike ID" },
         { key: "battery_id", header: "Battery ID" },
         { key: "start_time", header: "Start" },
@@ -185,100 +316,90 @@ export default function ReturnsTable() {
     return (
       <th
         key={sortKey}
-        className={`px-6 py-4 text-left font-semibold text-slate-700 select-none cursor-pointer ${className}`}
+        className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700 select-none cursor-pointer ${className}`}
         onClick={() => setSort((prev) => toggleSort(prev, sortKey))}
         title="Sort"
       >
         <span className="inline-flex items-center gap-2">
           {label}
-          <span className={`text-xs ${active ? "text-slate-700" : "text-slate-300"}`}>{arrow || "▲"}</span>
+          <span className={`text-xs ${active ? "text-slate-700" : "text-slate-400"}`}>{arrow || "▲"}</span>
         </span>
       </th>
     );
+  };
+
+  const onColumnsScroll = (e) => {
+    const top = e.currentTarget.scrollTop;
+    setColumnsScrollTop(top);
+    try {
+      localStorage.setItem(COLUMNS_SCROLL_STORAGE_KEY, String(top));
+    } catch {
+      // ignore
+    }
+  };
+
+  const toggleColumn = (key) => {
+    setVisibleCols((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleRefresh = () => {
+    load({ showLoading: true });
   };
 
   return (
     <div className="h-screen w-full flex bg-white relative overflow-hidden">
       <div className="flex relative z-10 w-full">
         <AdminSidebar />
-        <main className="flex-1 w-full min-w-0 overflow-y-auto relative z-10 p-8 pb-0 overflow-x-hidden sm:ml-64">
+        <main className="flex-1 w-full min-w-0 overflow-y-auto relative z-10 p-8 pb-0 overflow-x-hidden sm:ml-[var(--admin-sidebar-width,16rem)]">
           <div className="p-6 pb-0 space-y-8">
             {/* Hero Header */}
-            <div className="mb-8">
-              <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight mb-2">
-                Returns Management
-              </h1>
-              <p className="text-slate-600 text-base font-normal">
-                Track and manage all vehicle returns and deposit refunds
-              </p>
-            </div>
+            <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight mb-2">
+                  Returns Management
+                </h1>
+                <p className="text-slate-600 text-base font-normal">
+                  Track and manage all vehicle returns and deposit refunds
+                </p>
+              </div>
 
-            <div className="flex items-center justify-end mb-6">
-              <div className="flex flex-wrap items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={onExport}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold shadow-lg hover:bg-blue-700"
-                >
-                  <Download size={16} />
-                  Download CSV
-                </button>
-
-                <label className="flex items-center gap-3 text-slate-600 font-medium">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <label className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/70 backdrop-blur border border-white/30 shadow-sm text-sm font-semibold text-slate-700">
                   <input
                     type="checkbox"
                     checked={autoRefresh}
-                    onChange={e => setAutoRefresh(e.target.checked)}
-                    className="w-4 h-4 text-blue-600 bg-white/50 border-white/50 rounded focus:ring-blue-500/50"
+                    onChange={(e) => setAutoRefresh(e.target.checked)}
+                    className="h-4 w-4 rounded accent-evegah-primary"
                   />
-                  Auto-refresh
+                  <span className="hidden sm:inline">Auto-refresh</span>
+                  <span className="sm:hidden">Auto</span>
                 </label>
+
+                <button
+                  type="button"
+                  onClick={handleRefresh}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-evegah-primary to-brand-medium text-white text-sm font-semibold shadow-lg hover:opacity-95 disabled:opacity-60"
+                  disabled={loading}
+                  title="Refresh"
+                >
+                  <RefreshCw size={16} />
+                  <span className="hidden sm:inline">{loading ? "Refreshing…" : "Refresh"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={onExport}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold shadow-lg hover:opacity-95"
+                  title="Export CSV"
+                >
+                  <Download size={16} />
+                  <span className="hidden sm:inline">Export CSV</span>
+                  <span className="sm:hidden">CSV</span>
+                </button>
               </div>
             </div>
 
-            {/* SEARCH + FILTER */}
-            <div className="bg-white/70 backdrop-blur-xl border border-white/30 rounded-3xl shadow-xl p-6 flex flex-wrap items-center gap-3">
-              <div className="flex items-center bg-slate-100/80 px-4 py-3 rounded-2xl w-full md:w-96">
-                <Search size={18} className="text-slate-600" />
-                <input
-                  className="bg-transparent outline-none ml-3 w-full text-base font-normal placeholder-slate-400"
-                  placeholder="Search rider, mobile, vehicle, bike, battery, rental id…"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-slate-600">From</label>
-                <input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
-                  className="border border-slate-200 rounded-2xl px-3 py-3 text-sm font-medium bg-white/80 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-sm font-medium text-slate-600">To</label>
-                <input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                  className="border border-slate-200 rounded-2xl px-3 py-3 text-sm font-medium bg-white/80 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <select
-                className="border border-slate-200 rounded-2xl px-4 py-3 text-base font-medium bg-white/80 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                value={depositFilter}
-                onChange={(e) => setDepositFilter(e.target.value)}
-                aria-label="Deposit filter"
-              >
-                <option value="all">All deposits</option>
-                <option value="returned">Deposit returned</option>
-                <option value="not_returned">Deposit not returned</option>
-              </select>
-            </div>
-
+          
             {error ? (
               <div className="rounded-3xl border border-red-200/50 bg-red-50/70 backdrop-blur-xl px-6 py-4 text-sm text-red-700 shadow-lg">
                 {error}
@@ -317,6 +438,79 @@ export default function ReturnsTable() {
                 </div>
               ))}
             </div>
+                {/* SEARCH + FILTER */}
+            <div className="relative z-30 bg-white/80 backdrop-blur-xl border border-evegah-border rounded-2xl shadow-card p-4 flex flex-wrap items-center gap-4">
+              <div className="flex items-center bg-slate-50 px-4 py-3 rounded-2xl border border-slate-200 w-full md:w-96 focus-within:ring-2 focus-within:ring-evegah-primary/20">
+                <Search size={18} className="text-slate-600" />
+                <input
+                  className="bg-transparent outline-none ml-3 w-full text-base font-normal placeholder-slate-400"
+                  placeholder="Search rider, mobile, vehicle, bike, battery, rental id…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 px-4 py-3 bg-white rounded-2xl text-sm font-semibold border border-slate-200">
+                <span className="text-slate-600">From</span>
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-evegah-primary/20"
+                />
+
+                <span className="text-slate-600">To</span>
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-evegah-primary/20"
+                />
+              </div>
+
+              <select
+                className="border border-slate-200 rounded-2xl px-4 py-3 text-base font-medium bg-white/80 focus:outline-none focus:ring-2 focus:ring-evegah-primary"
+                value={depositFilter}
+                onChange={(e) => setDepositFilter(e.target.value)}
+                aria-label="Deposit filter"
+              >
+                <option value="all">All deposits</option>
+                <option value="returned">Deposit returned</option>
+                <option value="not_returned">Deposit not returned</option>
+              </select>
+
+              <div ref={columnsWrapRef} className="relative ml-auto z-[2000]">
+                <button
+                  type="button"
+                  onClick={() => setColumnsOpen((v) => !v)}
+                  className={`h-12 w-12 rounded-2xl grid place-items-center bg-white border border-slate-200 text-evegah-primary shadow-sm hover:bg-brand-light/60 ${columnsOpen ? "ring-2 ring-evegah-primary/30" : ""}`}
+                  aria-label="Toggle columns"
+                  title="Columns"
+                >
+                  <Columns size={18} />
+                </button>
+                {columnsOpen ? (
+                  <div className="absolute right-0 z-[2000] mt-2 w-56 rounded-2xl border border-slate-200 bg-white shadow-2xl p-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">
+                      Toggle Columns
+                    </p>
+                    <div ref={columnsListRef} onScroll={onColumnsScroll} className="max-h-72 overflow-auto pr-1 space-y-2">
+                      {columnOptions.map((col) => (
+                        <label key={col.key} className="flex items-center gap-2 text-sm text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(visibleCols[col.key])}
+                            onChange={() => toggleColumn(col.key)}
+                            className="rounded"
+                          />
+                          {col.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
 
             {loading ? (
               <div className="text-center text-slate-500 py-8">
@@ -326,22 +520,21 @@ export default function ReturnsTable() {
             ) : null}
 
             {/* TABLE */}
-            <div className="bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl border border-white/30 overflow-hidden">
+            <div className="bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl border border-white/30 overflow-hidden relative z-0">
               <div className="overflow-x-auto">
-                <table className="min-w-full text-base font-normal">
-                  <thead className="bg-white/50 backdrop-blur-sm">
+                <table className="min-w-full text-sm font-normal">
+                  <thead className="bg-slate-100">
                     <tr>
-                      {renderSortableTh({ label: "Rider", sortKey: "rider_full_name_display" })}
-                      {renderSortableTh({ label: "Mobile", sortKey: "rider_mobile_display" })}
-                      {renderSortableTh({ label: "Vehicle", sortKey: "vehicle_number" })}
-                      {renderSortableTh({ label: "E-Bike ID", sortKey: "bike_id" })}
-                      {renderSortableTh({ label: "Battery ID", sortKey: "battery_id" })}
-                      {renderSortableTh({ label: "Start", sortKey: "start_time" })}
-                      {renderSortableTh({ label: "Returned At", sortKey: "returned_at" })}
-                      {renderSortableTh({ label: "Deposit", sortKey: "deposit_returned_amount_value" })}
-                      {renderSortableTh({ label: "Condition", sortKey: "condition_notes" })}
-                      {renderSortableTh({ label: "Rental ID", sortKey: "rental_id_display" })}
-                      {renderSortableTh({ label: "Return ID", sortKey: "return_id_display" })}
+                      {visibleCols.rider_full_name_display ? renderSortableTh({ label: "Rider", sortKey: "rider_full_name_display" }) : null}
+                      {visibleCols.rider_mobile_display ? renderSortableTh({ label: "Mobile", sortKey: "rider_mobile_display" }) : null}
+                      {visibleCols.bike_id ? renderSortableTh({ label: "E-Bike ID", sortKey: "bike_id" }) : null}
+                      {visibleCols.battery_id ? renderSortableTh({ label: "Battery ID", sortKey: "battery_id" }) : null}
+                      {visibleCols.start_time ? renderSortableTh({ label: "Start", sortKey: "start_time" }) : null}
+                      {visibleCols.returned_at ? renderSortableTh({ label: "Returned At", sortKey: "returned_at" }) : null}
+                      {visibleCols.deposit_returned_amount_value ? renderSortableTh({ label: "Deposit", sortKey: "deposit_returned_amount_value" }) : null}
+                      {visibleCols.condition_notes ? renderSortableTh({ label: "Condition", sortKey: "condition_notes" }) : null}
+                      {visibleCols.rental_id_display ? renderSortableTh({ label: "Rental ID", sortKey: "rental_id_display" }) : null}
+                      {visibleCols.return_id_display ? renderSortableTh({ label: "Return ID", sortKey: "return_id_display" }) : null}
                     </tr>
                   </thead>
 
@@ -350,28 +543,47 @@ export default function ReturnsTable() {
                       const depositTone = r.deposit_returned_amount_value > 0 ? "text-green-700" : "text-slate-600";
                       return (
                         <tr key={r.return_id || i} className="border-t border-white/30 hover:bg-white/40 transition-colors duration-200">
-                          <td className="px-6 py-4">
-                            <div className="font-medium text-slate-800">{r.rider_full_name_display}</div>
-                            <div className="text-xs text-slate-500">{r.rider_code || ""}</div>
-                          </td>
-                          <td className="px-6 py-4 text-slate-600">{r.rider_mobile_display}</td>
-                          <td className="px-6 py-4 text-slate-600">{r.vehicle_number || "-"}</td>
-                          <td className="px-6 py-4 text-slate-600">{r.bike_id || "-"}</td>
-                          <td className="px-6 py-4 text-slate-600">{r.battery_id || "-"}</td>
-                          <td className="px-6 py-4 text-slate-600">{fmtDateTime(r.start_time)}</td>
-                          <td className="px-6 py-4 text-slate-600">{fmtDateTime(r.returned_at)}</td>
-                          <td className={`px-6 py-4 font-semibold ${depositTone}`}>
-                            {r.deposit_returned_amount_value > 0 ? formatINR(r.deposit_returned_amount_value) : "-"}
-                          </td>
-                          <td className="px-6 py-4 max-w-md">
-                            <span className="line-clamp-2 text-slate-600">{r.condition_notes || "-"}</span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className="text-xs text-slate-500 font-medium">{r.rental_id_display}</span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className="text-xs text-slate-500 font-medium">{r.return_id_display}</span>
-                          </td>
+                          {visibleCols.rider_full_name_display ? (
+                            <td className="px-4 py-3">
+                              <div className="font-medium text-slate-800">{r.rider_full_name_display}</div>
+                              <div className="text-xs text-slate-500">{r.rider_code || ""}</div>
+                            </td>
+                          ) : null}
+                          {visibleCols.rider_mobile_display ? (
+                            <td className="px-4 py-3 text-slate-600">{r.rider_mobile_display}</td>
+                          ) : null}
+                          {visibleCols.bike_id ? (
+                            <td className="px-4 py-3 text-slate-600">{r.bike_id || "-"}</td>
+                          ) : null}
+                          {visibleCols.battery_id ? (
+                            <td className="px-4 py-3 text-slate-600">{r.battery_id || "-"}</td>
+                          ) : null}
+                          {visibleCols.start_time ? (
+                            <td className="px-4 py-3 text-slate-600">{fmtDateTime(r.start_time)}</td>
+                          ) : null}
+                          {visibleCols.returned_at ? (
+                            <td className="px-4 py-3 text-slate-600">{fmtDateTime(r.returned_at)}</td>
+                          ) : null}
+                          {visibleCols.deposit_returned_amount_value ? (
+                            <td className={`px-4 py-3 font-semibold ${depositTone}`}>
+                              {r.deposit_returned_amount_value > 0 ? formatINR(r.deposit_returned_amount_value) : "-"}
+                            </td>
+                          ) : null}
+                          {visibleCols.condition_notes ? (
+                            <td className="px-4 py-3 max-w-md">
+                              <span className="line-clamp-2 text-slate-600">{r.condition_notes || "-"}</span>
+                            </td>
+                          ) : null}
+                          {visibleCols.rental_id_display ? (
+                            <td className="px-4 py-3">
+                              <span className="text-xs text-slate-500 font-medium">{r.rental_id_display}</span>
+                            </td>
+                          ) : null}
+                          {visibleCols.return_id_display ? (
+                            <td className="px-4 py-3">
+                              <span className="text-xs text-slate-500 font-medium">{r.return_id_display}</span>
+                            </td>
+                          ) : null}
                         </tr>
                       );
                     })}
@@ -382,32 +594,30 @@ export default function ReturnsTable() {
               {sortedRows.length === 0 && !loading ? (
                 <div className="p-8 text-center text-slate-500">No records found</div>
               ) : null}
+            </div>
 
-              <div className="px-6 py-4 border-t border-white/30 flex items-center justify-between bg-white/20 backdrop-blur-sm">
-                <div className="text-sm text-slate-600 font-medium">
-                  Page {page} / {totalPages}
-                </div>
+            <div className="mt-4 flex items-center justify-between">
+              <div className="text-sm text-slate-600 font-medium">Page {page} / {totalPages}</div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    className="p-3 rounded-2xl border border-white/50 bg-white/50 backdrop-blur-sm hover:bg-white/70 transition-all duration-200 disabled:opacity-50 shadow-lg hover:shadow-xl"
-                    disabled={page <= 1}
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    title="Previous"
-                  >
-                    <ChevronLeft size={16} className="text-slate-600" />
-                  </button>
-                  <button
-                    type="button"
-                    className="p-3 rounded-2xl border border-white/50 bg-white/50 backdrop-blur-sm hover:bg-white/70 transition-all duration-200 disabled:opacity-50 shadow-lg hover:shadow-xl"
-                    disabled={page >= totalPages}
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    title="Next"
-                  >
-                    <ChevronRight size={16} className="text-slate-600" />
-                  </button>
-                </div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  className="px-5 py-3 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all disabled:opacity-50"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  title="Previous"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  className="px-5 py-3 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all disabled:opacity-50"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  title="Next"
+                >
+                  Next
+                </button>
               </div>
             </div>
           </div>

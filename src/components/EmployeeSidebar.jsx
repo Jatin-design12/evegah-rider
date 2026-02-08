@@ -13,9 +13,9 @@ import logo from "../assets/logo.png";
 const navItem =
   "flex items-center gap-3 px-4 py-2 rounded-xl text-sm transition";
 const active =
-  "bg-brand-light text-brand-dark font-medium";
+  "bg-evegah-primary/10 text-evegah-primary font-semibold border border-evegah-primary/10";
 const inactive =
-  "text-gray-600 hover:bg-gray-100";
+  "text-gray-600 hover:bg-brand-light/60 hover:text-slate-800";
 
 export default function EmployeeSidebar({ isMobile = false, onClose, onLogout }) {
   return (

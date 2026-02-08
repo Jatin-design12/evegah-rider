@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import AdminSidebar from "../../components/admin/AdminSidebar";
 import { createAuthUser, deleteAuthUser, listAuthUsers, updateAuthUser } from "../../utils/adminUsers";
+import { Edit, RefreshCw, Search, Trash2, UserPlus } from "lucide-react";
 
 function Modal({ open, title, onClose, children }) {
   if (!open) return null;
@@ -24,6 +25,8 @@ export default function AdminUsers() {
   const [error, setError] = useState("");
   const [users, setUsers] = useState([]);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
 
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
@@ -79,6 +82,10 @@ export default function AdminUsers() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
+
   const filtered = useMemo(() => {
     const q = String(search || "").trim().toLowerCase();
     if (!q) return users;
@@ -88,6 +95,19 @@ export default function AdminUsers() {
       return email.includes(q) || name.includes(q) || String(u.uid || "").includes(q);
     });
   }, [users, search]);
+
+  const totalPages = useMemo(() => {
+    return Math.max(1, Math.ceil(filtered.length / pageSize));
+  }, [filtered.length]);
+
+  const pageRows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, page]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const handleCreate = async (e) => {
     e.preventDefault();
@@ -182,11 +202,23 @@ export default function AdminUsers() {
     <div className="h-screen w-full flex bg-white relative overflow-hidden">
       <div className="flex relative z-10 w-full">
         <AdminSidebar />
-        <main className="flex-1 w-full min-w-0 p-8 pb-0 overflow-x-hidden overflow-y-auto sm:ml-64 space-y-6">
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <h1 className="text-2xl font-semibold">Users</h1>
-            <button type="button" className="px-4 py-2 rounded-xl border bg-white" onClick={load}>
-              Refresh
+        <main className="flex-1 w-full min-w-0 p-8 pb-0 overflow-x-hidden overflow-y-auto sm:ml-[var(--admin-sidebar-width,16rem)] space-y-6">
+          <div className="mb-2 flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Employee</h1>
+              <p className="text-slate-600 mt-2 text-base font-normal">Create and manage admin/employee accounts</p>
+            </div>
+
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-evegah-primary to-brand-medium text-white text-sm font-semibold shadow-lg hover:opacity-95 disabled:opacity-60"
+              onClick={load}
+              disabled={loading}
+              title="Refresh"
+            >
+              <RefreshCw size={16} />
+              <span className="hidden sm:inline">{loading ? "Refreshing…" : "Refresh"}</span>
+              <span className="sm:hidden">Refresh</span>
             </button>
           </div>
 
@@ -196,14 +228,20 @@ export default function AdminUsers() {
             </div>
           ) : null}
 
-          <div className="bg-white p-6 rounded-2xl shadow-md space-y-4">
-            <h2 className="text-lg font-semibold">Create User</h2>
+          <div className="bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl border border-white/30 p-6 space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="text-lg font-semibold text-slate-900">Create User</h2>
+              <div className="hidden sm:flex items-center gap-2 text-sm font-semibold text-slate-600">
+                <UserPlus size={16} />
+                New account
+              </div>
+            </div>
 
             <form onSubmit={handleCreate} className="grid grid-cols-1 gap-4 md:grid-cols-4">
               <div>
                 <label className="text-sm font-medium text-gray-700">Email *</label>
                 <input
-                  className="w-full border rounded-xl px-4 py-2"
+                  className="w-full border border-slate-200 rounded-2xl px-4 py-3 bg-white/80 focus:outline-none focus:ring-2 focus:ring-evegah-primary/20"
                   type="email"
                   value={createForm.email}
                   onChange={(e) => setCreateForm((p) => ({ ...p, email: e.target.value }))}
@@ -213,7 +251,7 @@ export default function AdminUsers() {
               <div>
                 <label className="text-sm font-medium text-gray-700">Password *</label>
                 <input
-                  className="w-full border rounded-xl px-4 py-2"
+                  className="w-full border border-slate-200 rounded-2xl px-4 py-3 bg-white/80 focus:outline-none focus:ring-2 focus:ring-evegah-primary/20"
                   type="password"
                   value={createForm.password}
                   onChange={(e) => setCreateForm((p) => ({ ...p, password: e.target.value }))}
@@ -223,7 +261,7 @@ export default function AdminUsers() {
               <div>
                 <label className="text-sm font-medium text-gray-700">Display Name</label>
                 <input
-                  className="w-full border rounded-xl px-4 py-2"
+                  className="w-full border border-slate-200 rounded-2xl px-4 py-3 bg-white/80 focus:outline-none focus:ring-2 focus:ring-evegah-primary/20"
                   value={createForm.displayName}
                   onChange={(e) => setCreateForm((p) => ({ ...p, displayName: e.target.value }))}
                 />
@@ -232,7 +270,7 @@ export default function AdminUsers() {
               <div>
                 <label className="text-sm font-medium text-gray-700">Role</label>
                 <select
-                  className="w-full border rounded-xl px-4 py-2"
+                  className="w-full border border-slate-200 rounded-2xl px-4 py-3 bg-white/80 focus:outline-none focus:ring-2 focus:ring-evegah-primary/20"
                   value={createForm.role}
                   onChange={(e) => setCreateForm((p) => ({ ...p, role: e.target.value }))}
                 >
@@ -245,7 +283,7 @@ export default function AdminUsers() {
                 {createError ? <p className="text-sm text-red-600">{createError}</p> : null}
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-purple-600 text-white disabled:opacity-60"
+                  className="px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold shadow-lg hover:opacity-95 disabled:opacity-60"
                   disabled={creating}
                 >
                   {creating ? "Creating..." : "Create"}
@@ -254,77 +292,117 @@ export default function AdminUsers() {
             </form>
           </div>
 
-          <div className="bg-white p-6 rounded-2xl shadow-md space-y-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="text-lg font-semibold">Manage Users</h2>
-              <input
-                className="w-full sm:w-80 border rounded-xl px-4 py-2"
-                placeholder="Search by email/name/uid"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+          <div className="space-y-4">
+            <div className="bg-white/80 backdrop-blur-xl border border-evegah-border rounded-2xl shadow-card p-4 flex flex-wrap items-center gap-4">
+              <div className="flex items-center bg-slate-50 px-4 py-3 rounded-2xl border border-slate-200 w-full md:w-96 focus-within:ring-2 focus-within:ring-evegah-primary/20">
+                <Search size={18} className="text-slate-600" />
+                <input
+                  className="bg-transparent outline-none ml-3 w-full text-base font-normal placeholder-slate-400"
+                  placeholder="Search email, name, uid…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+
+              <div className="ml-auto text-sm font-semibold text-slate-600">
+                {filtered.length} users
+              </div>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left text-gray-500 border-b">
-                    <th className="py-2 pr-3 font-medium">Email</th>
-                    <th className="py-2 pr-3 font-medium">Name</th>
-                    <th className="py-2 pr-3 font-medium">Role</th>
-                    <th className="py-2 pr-3 font-medium">Status</th>
-                    <th className="py-2 pr-3 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading ? (
+            <div className="bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl border border-white/30 overflow-hidden relative z-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm font-medium">
+                  <thead className="bg-slate-100">
                     <tr>
-                      <td colSpan={5} className="py-3 text-gray-500">
-                        Loading users...
-                      </td>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">Email</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">Name</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">Role</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">Status</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">Actions</th>
                     </tr>
-                  ) : filtered.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="py-3 text-gray-500">
-                        No users found.
-                      </td>
-                    </tr>
-                  ) : (
-                    filtered.map((u) => (
-                      <tr key={u.uid} className="border-b last:border-b-0">
-                        <td className="py-3 pr-3">{u.email || "-"}</td>
-                        <td className="py-3 pr-3">{u.displayName || "-"}</td>
-                        <td className="py-3 pr-3">{u.role || "employee"}</td>
-                        <td className="py-3 pr-3">
-                          {u.disabled ? (
-                            <span className="text-red-600">Disabled</span>
-                          ) : (
-                            <span className="text-green-700">Active</span>
-                          )}
-                        </td>
-                        <td className="py-3 pr-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              className="px-4 py-2 rounded-xl border hover:bg-gray-50"
-                              onClick={() => openEdit(u)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              className="px-4 py-2 rounded-xl border border-red-200 text-red-700 hover:bg-red-50"
-                              onClick={() => openDelete(u)}
-                            >
-                              Delete
-                            </button>
-                          </div>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-6 text-slate-500">
+                          Loading users…
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+                    ) : filtered.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-4 py-6 text-slate-500">
+                          No users found.
+                        </td>
+                      </tr>
+                    ) : (
+                      pageRows.map((u) => (
+                        <tr key={u.uid} className="border-t hover:bg-slate-50/50 transition-colors">
+                          <td className="p-4 text-slate-800">{u.email || "-"}</td>
+                          <td className="p-4 text-slate-700">{u.displayName || "-"}</td>
+                          <td className="p-4">
+                            <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${String(u.role || "employee").toLowerCase() === "admin" ? "bg-indigo-100 text-indigo-700" : "bg-sky-100 text-sky-700"}`}>
+                              {u.role || "employee"}
+                            </span>
+                          </td>
+                          <td className="p-4">
+                            {u.disabled ? (
+                              <span className="inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold bg-rose-100 text-rose-700">Disabled</span>
+                            ) : (
+                              <span className="inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold bg-emerald-100 text-emerald-700">Active</span>
+                            )}
+                          </td>
+                          <td className="p-4">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold shadow-sm hover:opacity-95"
+                                onClick={() => openEdit(u)}
+                                title="Edit"
+                              >
+                                <Edit size={16} />
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-red-500 to-rose-600 text-white text-sm font-semibold shadow-sm hover:opacity-95"
+                                onClick={() => openDelete(u)}
+                                title="Delete"
+                              >
+                                <Trash2 size={16} />
+                                Delete
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-slate-600 font-medium">Page {page} / {totalPages}</div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  className="px-5 py-3 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all disabled:opacity-50"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  title="Previous"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  className="px-5 py-3 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all disabled:opacity-50"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  title="Next"
+                >
+                  Next
+                </button>
+              </div>
             </div>
           </div>
 
@@ -337,7 +415,7 @@ export default function AdminUsers() {
               <div>
                 <label className="text-sm font-medium text-gray-700">Email</label>
                 <input
-                  className="w-full border rounded-xl px-4 py-2"
+                  className="w-full border border-slate-200 rounded-2xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-evegah-primary/20"
                   value={editForm.email}
                   onChange={(e) => setEditForm((p) => ({ ...p, email: e.target.value }))}
                 />
@@ -346,7 +424,7 @@ export default function AdminUsers() {
               <div>
                 <label className="text-sm font-medium text-gray-700">Display Name</label>
                 <input
-                  className="w-full border rounded-xl px-4 py-2"
+                  className="w-full border border-slate-200 rounded-2xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-evegah-primary/20"
                   value={editForm.displayName}
                   onChange={(e) => setEditForm((p) => ({ ...p, displayName: e.target.value }))}
                 />
@@ -355,7 +433,7 @@ export default function AdminUsers() {
               <div>
                 <label className="text-sm font-medium text-gray-700">Role</label>
                 <select
-                  className="w-full border rounded-xl px-4 py-2"
+                  className="w-full border border-slate-200 rounded-2xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-evegah-primary/20"
                   value={editForm.role}
                   onChange={(e) => setEditForm((p) => ({ ...p, role: e.target.value }))}
                 >
@@ -379,7 +457,7 @@ export default function AdminUsers() {
               <div className="md:col-span-2">
                 <label className="text-sm font-medium text-gray-700">Set New Password (optional)</label>
                 <input
-                  className="w-full border rounded-xl px-4 py-2"
+                  className="w-full border border-slate-200 rounded-2xl px-4 py-3 bg-white focus:outline-none focus:ring-2 focus:ring-evegah-primary/20"
                   type="password"
                   value={editForm.password}
                   onChange={(e) => setEditForm((p) => ({ ...p, password: e.target.value }))}
@@ -394,7 +472,7 @@ export default function AdminUsers() {
                 </button>
                 <button
                   type="button"
-                  className="px-5 py-2 rounded-xl bg-purple-600 text-white disabled:opacity-60"
+                  className="px-5 py-3 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold shadow-lg hover:opacity-95 disabled:opacity-60"
                   onClick={handleSaveEdit}
                   disabled={editSaving}
                 >
@@ -434,7 +512,7 @@ export default function AdminUsers() {
                 </button>
                 <button
                   type="button"
-                  className="px-5 py-2 rounded-xl bg-red-600 text-white disabled:opacity-60"
+                  className="px-5 py-3 rounded-2xl bg-gradient-to-r from-red-500 to-rose-600 text-white text-sm font-semibold shadow-lg hover:opacity-95 disabled:opacity-60"
                   onClick={handleConfirmDelete}
                   disabled={deleting}
                 >

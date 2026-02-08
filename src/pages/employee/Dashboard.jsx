@@ -268,7 +268,9 @@ export default function Dashboard() {
   const { counts: zoneCounts, loading: zoneCountsLoading } =
     useVehicleZoneCounts();
 
-  const PAGE_SIZE = 10;
+  const DUE_PAGE_SIZE = 10;
+  const SWAP_PAGE_SIZE = 10;
+  const DRAFT_PAGE_SIZE = 5;
 
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsRow, setDetailsRow] = useState(null);
@@ -279,6 +281,7 @@ export default function Dashboard() {
 
   const [swaps, setSwaps] = useState([]);
   const [swapsLoading, setSwapsLoading] = useState(false);
+  const [swapPage, setSwapPage] = useState(1);
 
   const [dues, setDues] = useState([]);
   const [duesLoading, setDuesLoading] = useState(false);
@@ -426,21 +429,24 @@ export default function Dashboard() {
   })();
 
   const dueTotal = paymentOverdueRows.length;
-  const duePageCount = Math.max(1, Math.ceil(dueTotal / PAGE_SIZE));
-  const duePageRows = paymentOverdueRows.slice((duePage - 1) * PAGE_SIZE, duePage * PAGE_SIZE);
-  const dueStart = dueTotal ? (duePage - 1) * PAGE_SIZE + 1 : 0;
-  const dueEnd = Math.min(dueTotal, duePage * PAGE_SIZE);
+  const duePageCount = Math.max(1, Math.ceil(dueTotal / DUE_PAGE_SIZE));
+  const duePageRows = paymentOverdueRows.slice((duePage - 1) * DUE_PAGE_SIZE, duePage * DUE_PAGE_SIZE);
+  const dueStart = dueTotal ? (duePage - 1) * DUE_PAGE_SIZE + 1 : 0;
+  const dueEnd = Math.min(dueTotal, duePage * DUE_PAGE_SIZE);
 
   const swapTotal = Array.isArray(swaps) ? swaps.length : 0;
-  const swapPageRows = Array.isArray(swaps) ? swaps : [];
-  const swapStart = swapTotal ? 1 : 0;
-  const swapEnd = swapTotal;
+  const swapPageCount = Math.max(1, Math.ceil(swapTotal / SWAP_PAGE_SIZE));
+  const swapPageRows = Array.isArray(swaps)
+    ? swaps.slice((swapPage - 1) * SWAP_PAGE_SIZE, swapPage * SWAP_PAGE_SIZE)
+    : [];
+  const swapStart = swapTotal ? (swapPage - 1) * SWAP_PAGE_SIZE + 1 : 0;
+  const swapEnd = Math.min(swapTotal, swapPage * SWAP_PAGE_SIZE);
 
   const draftTotal = drafts.length;
-  const draftPageCount = Math.max(1, Math.ceil(draftTotal / PAGE_SIZE));
-  const draftPageRows = drafts.slice((draftPage - 1) * PAGE_SIZE, draftPage * PAGE_SIZE);
-  const draftStart = draftTotal ? (draftPage - 1) * PAGE_SIZE + 1 : 0;
-  const draftEnd = Math.min(draftTotal, draftPage * PAGE_SIZE);
+  const draftPageCount = Math.max(1, Math.ceil(draftTotal / DRAFT_PAGE_SIZE));
+  const draftPageRows = drafts.slice((draftPage - 1) * DRAFT_PAGE_SIZE, draftPage * DRAFT_PAGE_SIZE);
+  const draftStart = draftTotal ? (draftPage - 1) * DRAFT_PAGE_SIZE + 1 : 0;
+  const draftEnd = Math.min(draftTotal, draftPage * DRAFT_PAGE_SIZE);
 
   useEffect(() => {
     setDuePage(1);
@@ -449,6 +455,10 @@ export default function Dashboard() {
   useEffect(() => {
     setDraftPage(1);
   }, [draftTotal]);
+
+  useEffect(() => {
+    setSwapPage(1);
+  }, [swapTotal]);
 
   useEffect(() => {
     if (overdueCount > 0) setOverdueAlertDismissed(false);
@@ -515,7 +525,7 @@ export default function Dashboard() {
         />
         <StatCardWithIcon
           label="Signed In"
-          value={user?.email || "-"}
+          value={user?.displayName || user?.email || "-"}
           icon={User}
         />
       </div>
@@ -869,6 +879,27 @@ export default function Dashboard() {
               <p>
                 Showing {swapStart}-{swapEnd} of {swapTotal} entries
               </p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="btn-muted px-3 py-1 text-xs"
+                  disabled={swapPage === 1}
+                  onClick={() => setSwapPage((prev) => Math.max(1, prev - 1))}
+                >
+                  Previous
+                </button>
+                <span>
+                  Page {swapPage} / {swapPageCount}
+                </span>
+                <button
+                  type="button"
+                  className="btn-muted px-3 py-1 text-xs"
+                  disabled={swapPage >= swapPageCount}
+                  onClick={() => setSwapPage((prev) => Math.min(swapPageCount, prev + 1))}
+                >
+                  Next
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -923,7 +954,7 @@ export default function Dashboard() {
                   </td>
                 </tr>
               ) : (
-                drafts.map((draft) => (
+                draftPageRows.map((draft) => (
                   <tr
                     key={draft.id}
                     className="border-b border-evegah-border last:border-b-0 hover:bg-gray-50"
@@ -959,6 +990,32 @@ export default function Dashboard() {
               )}
             </tbody>
           </table>
+        </div>
+        <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+          <p>
+            Showing {draftStart}-{draftEnd} of {draftTotal} entries
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="btn-muted px-3 py-1 text-xs"
+              disabled={draftPage === 1}
+              onClick={() => setDraftPage((prev) => Math.max(1, prev - 1))}
+            >
+              Previous
+            </button>
+            <span>
+              Page {draftPage} / {draftPageCount}
+            </span>
+            <button
+              type="button"
+              className="btn-muted px-3 py-1 text-xs"
+              disabled={draftPage >= draftPageCount}
+              onClick={() => setDraftPage((prev) => Math.min(draftPageCount, prev + 1))}
+            >
+              Next
+            </button>
+          </div>
         </div>
       </div>
     </EmployeeLayout>

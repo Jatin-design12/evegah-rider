@@ -312,7 +312,7 @@ export default function Step5Payment() {
       });
 
       if (res?.sent) {
-        setWhatsAppStatus("Receipt sent on WhatsApp.");
+            setWhatsAppStatus("Receipt sent successfully.");
       } else if (res?.mediaUrl) {
         // Do not auto-open WhatsApp; prefer Cloud API template.
         // Provide an explicit button for staff to send manually if needed.

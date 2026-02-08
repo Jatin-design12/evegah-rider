@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import AdminSidebar from "../../components/admin/AdminSidebar";
 
 import { apiFetch } from "../../config/api";
-import { Users, Bike, IndianRupee, BarChart2, Activity } from "lucide-react";
+import { Users, Bike, IndianRupee, BarChart2, Activity, Package, RotateCcw, MapPin } from "lucide-react";
 
 import { MultiLayerRevenueChart } from "../../components/Charts";
 import {
@@ -110,7 +110,7 @@ export default function AdminDashboard() {
 			<div className="flex relative z-10 w-full min-h-0">
 				<AdminSidebar />
 				<div
-					className="flex-1 overflow-y-auto min-h-0 min-w-0 sm:ml-64"
+					className="flex-1 overflow-y-auto min-h-0 min-w-0 sm:ml-[var(--admin-sidebar-width,16rem)]"
 					style={{
 						minHeight: '100vh',
 						paddingBottom: 0,
@@ -120,20 +120,20 @@ export default function AdminDashboard() {
 					}}
 				>
 					<div
-						className="px-10 pt-10 pb-0"
+						className="px-10 pt-10 pb-10"
 						style={{
-							paddingBottom: 0,
-							marginBottom: 0
+							paddingBottom: 10,
+							marginBottom: 30
 						}}
 					>
 						{/* Hero Header */}
 						<div className="mb-6">
 							<div className="flex items-center justify-between">
 								<div>
-									<h1 className="text-4xl font-bold text-slate-900 tracking-tight">
+									<h1 className="text-3xl font-bold text-slate-900 tracking-tight">
 										Dashboard Overview
 									</h1>
-									<p className="text-lg text-slate-600 mt-2 max-w-2xl">
+									<p className="text-md text-slate-600 mt-2 max-w-2xl">
 										Welcome back! Here's what's happening with your eVEGAH operations today.
 									</p>
 								</div>
@@ -252,11 +252,16 @@ export default function AdminDashboard() {
 							</div>
 
 							{/* Bottom Analytics Row */}
-							<div className="grid grid-cols-1 xl:grid-cols-3 gap-6 pb-0" style={{ paddingBottom: 0, marginBottom: 0 }}>
+							<div className="grid grid-cols-1 xl:grid-cols-3 gap-6" style={{ paddingBottom: 0, marginBottom: 0 }}>
 								{/* Rentals by Package */}
 								<div className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 shadow-2xl border border-white/30 hover:shadow-3xl transition-all duration-500">
 									<div className="flex items-center justify-between gap-4 mb-4">
-										<h3 className="text-xl font-bold text-slate-800">Rentals by Package</h3>
+											<div className="flex items-center gap-3">
+												<div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg shrink-0">
+													<Package className="w-5 h-5 text-white" />
+												</div>
+												<h3 className="text-xl font-bold text-slate-800">Rentals by Package</h3>
+											</div>
 										<span className="text-sm text-slate-500 bg-slate-100 px-3 py-1 rounded-full">30 Days</span>
 									</div>
 									<div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-4">
@@ -288,7 +293,12 @@ export default function AdminDashboard() {
 								{/* Returns This Week */}
 								<div className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 shadow-2xl border border-white/30 hover:shadow-3xl transition-all duration-500">
 									<div className="flex items-center justify-between gap-4 mb-4">
-										<h3 className="text-xl font-bold text-slate-800">Returns This Week</h3>
+											<div className="flex items-center gap-3">
+												<div className="w-10 h-10 bg-gradient-to-br from-pink-500 to-rose-600 rounded-2xl flex items-center justify-center shadow-lg shrink-0">
+													<RotateCcw className="w-5 h-5 text-white" />
+												</div>
+												<h3 className="text-xl font-bold text-slate-800">Returns This Week</h3>
+											</div>
 										<span className="text-sm text-slate-500 bg-slate-100 px-3 py-1 rounded-full">Trend</span>
 									</div>
 									<div className="bg-gradient-to-br from-pink-50 to-rose-50 rounded-2xl p-4">
@@ -320,7 +330,12 @@ export default function AdminDashboard() {
 								{/* Rentals by Zone */}
 								<div className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 shadow-2xl border border-white/30 hover:shadow-3xl transition-all duration-500">
 									<div className="flex items-center justify-between gap-4 mb-4">
-										<h3 className="text-xl font-bold text-slate-800">Rentals by Zone</h3>
+											<div className="flex items-center gap-3">
+												<div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg shrink-0">
+													<MapPin className="w-5 h-5 text-white" />
+												</div>
+												<h3 className="text-xl font-bold text-slate-800">Rentals by Zone</h3>
+											</div>
 										<span className="text-sm text-slate-500 bg-slate-100 px-3 py-1 rounded-full">30 Days</span>
 									</div>
 									<div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-2xl p-4">

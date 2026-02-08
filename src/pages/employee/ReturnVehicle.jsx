@@ -28,6 +28,7 @@ export default function ReturnVehicle() {
   const [depositReturnedSelection, setDepositReturnedSelection] = useState(null);
   const [depositSelectionError, setDepositSelectionError] = useState("");
   const [rental, setRental] = useState(null);
+  const [rentalDisplayId, setRentalDisplayId] = useState("");
   const [overdueCharge, setOverdueCharge] = useState(0);
   const [overdueMinutes, setOverdueMinutes] = useState(0);
   const [extraPayment, setExtraPayment] = useState(0);
@@ -38,10 +39,39 @@ export default function ReturnVehicle() {
       rental ? Boolean(rental.deposit_returned) : null
     );
     setDepositSelectionError("");
+    setRentalDisplayId("");
     // Reset extra payment and refund when new rental is loaded
     setExtraPayment(0);
     setFinalDepositRefund(0);
   }, [rental]);
+
+  useEffect(() => {
+    const riderId = rental?.rider_id;
+    const rentalId = rental?.id;
+    if (!riderId || !rentalId) return;
+
+    let mounted = true;
+    apiFetch(`/api/riders/${encodeURIComponent(riderId)}/rentals`)
+      .then((rows) => {
+        if (!mounted) return;
+        const list = Array.isArray(rows) ? rows : [];
+        const sorted = [...list].sort((a, b) => Date.parse(a?.start_time || "") - Date.parse(b?.start_time || ""));
+        const index = sorted.findIndex((r) => String(r?.id || "") === String(rentalId));
+        if (index >= 0) {
+          const seq = index + 1;
+          const type = seq === 1 ? "NR" : "RR";
+          setRentalDisplayId(`EVR-${type}_${seq}`);
+        }
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setRentalDisplayId("");
+      });
+
+    return () => {
+      mounted = false;
+    };
+  }, [rental?.rider_id, rental?.id]);
 
   // Calculate final deposit refund whenever deposit, overdue, or extra payment changes
   useEffect(() => {
@@ -274,7 +304,7 @@ export default function ReturnVehicle() {
                   <p className="text-xs text-gray-500">Rider</p>
                   <p className="text-sm text-evegah-text font-medium">{rental.rider_full_name || "-"}</p>
                   <p className="mt-0.5 text-xs text-gray-500">
-                    Rental: {formatRentalId(rental.id)}
+                    Rental: {rentalDisplayId || formatRentalId(rental.id)}
                   </p>
                 </div>
                 <div>

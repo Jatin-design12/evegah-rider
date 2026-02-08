@@ -7,7 +7,7 @@
 ================================ */
 body {
   @apply bg-evegah-bg text-evegah-text;
-  font-family: "Segoe UI", Roboto, "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+  font-family: "Inter", "Segoe UI", Roboto, system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
 }
 
 /* ===============================

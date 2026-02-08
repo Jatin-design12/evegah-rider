@@ -84,6 +84,8 @@ function RetainRiderInner() {
   const [savingPayment, setSavingPayment] = useState(false);
   const [paymentError, setPaymentError] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
+  const [activeRideExpectedEnd, setActiveRideExpectedEnd] = useState("");
+  const [activeRideStart, setActiveRideStart] = useState("");
   const [vehicleDropdownOpen, setVehicleDropdownOpen] = useState(false);
   const [vehicleQuery, setVehicleQuery] = useState("");
   const [batteryDropdownOpen, setBatteryDropdownOpen] = useState(false);
@@ -319,6 +321,7 @@ function RetainRiderInner() {
     const active = await prefillFromActiveRental({ mobileDigits: phone });
     if (active?.id) {
       const activeMeta = parseMaybeJson(active?.meta) || {};
+      const expectedEnd = active?.expected_end_time || activeMeta?.expected_end_time || "";
       updateForm({
         activeRentalId: active.id,
         rentalStart: toDateTimeLocal(active.start_time),
@@ -328,8 +331,14 @@ function RetainRiderInner() {
         operationalZone:
           inferredZone || (preferZoneFromRentals ? String(activeMeta?.zone || "").trim() : "") || "",
       });
+      setActiveRideExpectedEnd(expectedEnd);
+      setActiveRideStart(active?.start_time || "");
+      setError("");
       return;
     }
+
+    setActiveRideExpectedEnd("");
+    setActiveRideStart("");
 
     // Otherwise, prefill from the last rental.
     await prefillFromLastRental(r?.id, { preferZone: preferZoneFromRentals });
@@ -430,23 +439,51 @@ function RetainRiderInner() {
       return;
     }
 
-    const isUpdatingActiveRental = Boolean(formData.activeRentalId);
+    if (!String(formData.issuedByName || "").trim()) {
+      setPaymentError("Issued by name is required.");
+      return;
+    }
 
-    if (!isUpdatingActiveRental) {
+    const isUpdatingActiveRental = Boolean(formData.activeRentalId);
+    const startMs = formData.rentalStart ? new Date(formData.rentalStart).getTime() : NaN;
+    const activeStartMs = activeRideStart ? new Date(activeRideStart).getTime() : NaN;
+    const activeEndMs = activeRideExpectedEnd ? new Date(activeRideExpectedEnd).getTime() : NaN;
+    const canScheduleAfterActive =
+      isUpdatingActiveRental &&
+      Number.isFinite(startMs) &&
+      Number.isFinite(activeEndMs) &&
+      startMs >= activeEndMs;
+    const creatingNewBooking = !isUpdatingActiveRental || canScheduleAfterActive;
+
+    if (isUpdatingActiveRental && !creatingNewBooking) {
+      if (Number.isFinite(activeEndMs) && Number.isFinite(startMs)) {
+        if (Number.isFinite(activeStartMs) && startMs !== activeStartMs && startMs < activeEndMs) {
+          setPaymentError("Retain ride start must be after the current active ride end time.");
+          return;
+        }
+      } else if (Number.isFinite(startMs) && Number.isFinite(activeStartMs) && startMs !== activeStartMs) {
+        setPaymentError("Active ride end time is missing. Choose a start time after the active ride ends.");
+        return;
+      }
+    }
+
+    if (creatingNewBooking) {
       if (!Array.isArray(formData.preRidePhotos) || formData.preRidePhotos.length === 0) {
         setPaymentError("Upload at least one pre-ride vehicle photo.");
         return;
       }
     }
 
-    if (formData.bikeId && unavailableVehicleSet.has(normalizeIdForCompare(formData.bikeId))) {
-      setPaymentError("Selected vehicle is unavailable.");
-      return;
-    }
+    if (creatingNewBooking) {
+      if (formData.bikeId && unavailableVehicleSet.has(normalizeIdForCompare(formData.bikeId))) {
+        setPaymentError("Selected vehicle is unavailable.");
+        return;
+      }
 
-    if (formData.batteryId && unavailableBatterySet.has(normalizeIdForCompare(formData.batteryId))) {
-      setPaymentError("Selected battery is unavailable.");
-      return;
+      if (formData.batteryId && unavailableBatterySet.has(normalizeIdForCompare(formData.batteryId))) {
+        setPaymentError("Selected battery is unavailable.");
+        return;
+      }
     }
 
     setSavingPayment(true);
@@ -454,7 +491,7 @@ function RetainRiderInner() {
       const startIso = new Date(formData.rentalStart).toISOString();
       const endIso = formData.rentalEnd ? new Date(formData.rentalEnd).toISOString() : null;
 
-      if (isUpdatingActiveRental) {
+      if (isUpdatingActiveRental && !creatingNewBooking) {
         await apiFetch(`/api/rentals/${encodeURIComponent(formData.activeRentalId)}`, {
           method: "PATCH",
           body: {
@@ -465,6 +502,9 @@ function RetainRiderInner() {
             payment_mode: formData.paymentMode || null,
             bike_model: formData.bikeModel || null,
             expected_end_time: endIso,
+            meta: {
+              issued_by_name: formData.issuedByName || null,
+            },
           },
         });
       } else {
@@ -487,6 +527,7 @@ function RetainRiderInner() {
             other_accessories: formData.otherAccessories || null,
             meta: {
               zone: formData.operationalZone || null,
+              issued_by_name: formData.issuedByName || null,
               employee_uid: user?.uid || null,
               employee_email: user?.email || null,
             },
@@ -580,7 +621,7 @@ function RetainRiderInner() {
         },
       });
       if (res?.sent) {
-        setWhatsAppStatus("Receipt sent on WhatsApp.");
+        setWhatsAppStatus("Receipt sent successfully.");
       } else if (res?.mediaUrl) {
         setWhatsAppFallback({ phoneDigits, mediaUrl: res.mediaUrl });
         setWhatsAppStatus(String(res?.reason || res?.error || "Unable to send via WhatsApp Cloud API."));
@@ -705,6 +746,8 @@ function RetainRiderInner() {
                   resetForm();
                   setResults([]);
                   setRetainSuccess(false);
+                  setActiveRideExpectedEnd("");
+                  setActiveRideStart("");
                 }}
               >
                 Change Rider
@@ -737,8 +780,24 @@ function RetainRiderInner() {
             <div>
               <h3 className="text-base font-semibold text-evegah-text">Rental Details</h3>
               <p className="text-sm text-gray-500">Update rental plan and accessories.</p>
+              
             </div>
-
+           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="label">Operational Zone</label>
+                <select
+                  className="select"
+                  value={formData.operationalZone || ""}
+                  onChange={(e) => updateForm({ operationalZone: e.target.value })}
+                >
+                  <option>Gotri Zone</option>
+                  <option>Manjalpur</option>
+                  <option>Karelibaug</option>
+                  <option>Daman</option>
+                  <option>Aatapi</option>
+                </select>
+              </div>
+            </div>
             {/* Rental Details: Sequence as per screenshot */}
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {/* Rental Package */}
@@ -766,6 +825,7 @@ function RetainRiderInner() {
                 />
               </div>
             </div>
+           
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               {/* Return Date (editable) */}
               <div>
@@ -800,6 +860,8 @@ function RetainRiderInner() {
                 </select>
               </div>
             </div>
+
+           
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <div>
@@ -1064,7 +1126,17 @@ function RetainRiderInner() {
                 onChange={(e) => updateForm({ otherAccessories: e.target.value })}
               />
             </div>
-
+                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div>
+                <label className="label">Issued By (Name)</label>
+                <input
+                  className="input"
+                  placeholder="Enter your name"
+                  value={formData.issuedByName || ""}
+                  onChange={(e) => updateForm({ issuedByName: e.target.value })}
+                />
+              </div>
+            </div>  
             <div className="rounded-xl border border-evegah-border bg-gray-50 p-4 space-y-3">
               <h3 className="font-medium text-evegah-text">Pre-ride Photos (Required)</h3>
               <p className="text-sm text-gray-500">

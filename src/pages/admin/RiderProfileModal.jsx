@@ -53,6 +53,22 @@ export default function RiderProfileModal({ rider, close }) {
     }
   };
 
+  const coerceBoolean = (value) => {
+    if (value === true || value === false) return value;
+    if (value === "true") return true;
+    if (value === "false") return false;
+    if (value === null || value === undefined) return null;
+    return Boolean(value);
+  };
+
+  const pickBoolean = (...values) => {
+    for (const value of values) {
+      if (value === null || value === undefined || value === "") continue;
+      return coerceBoolean(value);
+    }
+    return false;
+  };
+
   const safeText = (value, fallback = "N/A") => {
     const s = String(value ?? "").trim();
     return s ? s : fallback;
@@ -98,17 +114,39 @@ export default function RiderProfileModal({ rider, close }) {
     loadAll();
   }, [loadAll]);
 
+  const uniqueRides = useMemo(() => {
+    if (!Array.isArray(rides)) return [];
+    const seen = new Set();
+    const list = [];
+    rides.forEach((r) => {
+      const id = String(r?.id || "").trim();
+      const key = id || [
+        r?.start_time,
+        r?.end_time,
+        r?.bike_id,
+        r?.battery_id,
+        r?.total_amount,
+      ]
+        .map((v) => String(v || "").trim())
+        .join("|");
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      list.push(r);
+    });
+    return list;
+  }, [rides, parseMaybeJson]);
+
   const latestRide = useMemo(() => {
-    if (!Array.isArray(rides) || rides.length === 0) return null;
-    return rides[0];
-  }, [rides]);
+    if (!Array.isArray(uniqueRides) || uniqueRides.length === 0) return null;
+    return uniqueRides[0];
+  }, [uniqueRides]);
 
   const selectedRide = useMemo(() => {
-    if (!Array.isArray(rides) || rides.length === 0) return null;
+    if (!Array.isArray(uniqueRides) || uniqueRides.length === 0) return null;
     const id = String(selectedRentalId || "");
     if (!id) return null;
-    return rides.find((r) => String(r?.id || "") === id) || null;
-  }, [rides, selectedRentalId]);
+    return uniqueRides.find((r) => String(r?.id || "") === id) || null;
+  }, [uniqueRides, selectedRentalId]);
 
   const currentRide = selectedRide || latestRide;
 
@@ -141,6 +179,58 @@ export default function RiderProfileModal({ rider, close }) {
 
   const rideMeta = useMemo(() => parseMaybeJson(currentRide?.meta) || {}, [currentRide?.meta]);
   const riderMeta = useMemo(() => parseMaybeJson(rider?.meta) || {}, [rider?.meta]);
+
+  const agreementFallback = useMemo(() => {
+    const list = Array.isArray(rides) ? rides : [];
+    let confirm = null;
+    let accept = null;
+    for (const row of list) {
+      const meta = parseMaybeJson(row?.meta) || {};
+      if (confirm === null) {
+        const v = meta?.agreement_confirm_info ?? meta?.agreementConfirmInfo;
+        if (v !== undefined && v !== null && v !== "") confirm = v;
+      }
+      if (accept === null) {
+        const v = meta?.agreement_accept_terms ?? meta?.agreementAcceptTerms;
+        if (v !== undefined && v !== null && v !== "") accept = v;
+      }
+      if (confirm !== null && accept !== null) break;
+    }
+    return { confirm, accept };
+  }, [rides]);
+
+  const agreementConfirmInfo = pickBoolean(
+    rideMeta?.agreement_confirm_info,
+    rideMeta?.agreementConfirmInfo,
+    currentRide?.agreement_confirm_info,
+    currentRide?.agreementConfirmInfo,
+    agreementFallback.confirm,
+    riderMeta?.agreement_confirm_info,
+    riderMeta?.agreementConfirmInfo,
+    rider?.agreement_confirm_info,
+    rider?.agreementConfirmInfo
+  );
+
+  const agreementAcceptTerms = pickBoolean(
+    rideMeta?.agreement_accept_terms,
+    rideMeta?.agreementAcceptTerms,
+    currentRide?.agreement_accept_terms,
+    currentRide?.agreementAcceptTerms,
+    agreementFallback.accept,
+    riderMeta?.agreement_accept_terms,
+    riderMeta?.agreementAcceptTerms,
+    rider?.agreement_accept_terms,
+    rider?.agreementAcceptTerms
+  );
+
+  const agreementIssuedBy =
+    rideMeta?.issued_by_name ||
+    rideMeta?.issuedByName ||
+    riderMeta?.issued_by_name ||
+    riderMeta?.issuedByName ||
+    rider?.issued_by_name ||
+    rider?.issuedByName ||
+    "";
 
   const fallbackZone = useMemo(() => {
     const candidates = [];
@@ -259,9 +349,9 @@ export default function RiderProfileModal({ rider, close }) {
   }, [currentRide?.id, rider?.id]);
 
   const riderType = useMemo(() => {
-    if (!Array.isArray(rides)) return "New";
-    return rides.length > 1 ? "Retain" : "New";
-  }, [rides]);
+    if (!Array.isArray(uniqueRides)) return "New";
+    return uniqueRides.length > 1 ? "Retain" : "New";
+  }, [uniqueRides]);
 
   const zoneLabel = useMemo(() => {
     return fallbackZone || "N/A";
@@ -510,7 +600,7 @@ export default function RiderProfileModal({ rider, close }) {
                             value={selectedRentalId}
                             onChange={(e) => setSelectedRentalId(e.target.value)}
                           >
-                            {rides.map((r) => (
+                            {uniqueRides.map((r) => (
                               <option key={r.id} value={r.id}>
                                 {r.start_time ? formatDateTimeDDMMYYYY(r.start_time, "-") : r.id}
                               </option>
@@ -560,7 +650,7 @@ export default function RiderProfileModal({ rider, close }) {
                       <Field
                         label="Information Confirmed"
                         value={
-                          rideMeta?.agreement_confirm_info ? (
+                          agreementConfirmInfo ? (
                             <Badge tone="success">Yes</Badge>
                           ) : (
                             <Badge>No</Badge>
@@ -570,14 +660,14 @@ export default function RiderProfileModal({ rider, close }) {
                       <Field
                         label="Terms Agreed"
                         value={
-                          rideMeta?.agreement_accept_terms ? (
+                          agreementAcceptTerms ? (
                             <Badge tone="success">Yes</Badge>
                           ) : (
                             <Badge>No</Badge>
                           )
                         }
                       />
-                      <Field label="Issued By" value={safeText(rideMeta?.issued_by_name, "N/A")} right />
+                      <Field label="Issued By" value={safeText(agreementIssuedBy, "N/A")} right />
                     </div>
                   </div>
                 </section>
@@ -679,9 +769,9 @@ export default function RiderProfileModal({ rider, close }) {
                       <div className="p-4 text-sm text-gray-500">No ride history found.</div>
                     ) : (
                       <div className="divide-y divide-evegah-border">
-                        {rides.map((ride) => (
+                        {uniqueRides.map((ride, idx) => (
                           <div
-                            key={ride.id}
+                            key={ride.id || `${ride?.start_time || "ride"}-${idx}`}
                             className="p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
                           >
                             <div>

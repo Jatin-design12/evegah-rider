@@ -13,15 +13,8 @@ import autoTable from "jspdf-autotable";
 import html2canvas from "html2canvas";
 import { useMemo, useState } from "react";
 import { downloadCsv } from "../utils/downloadCsv";
-import {
-  Bar,
-  BarChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
-import { Activity, BarChart3, MapPin, TrendingUp, Users, Download } from "lucide-react";
+import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Download } from "lucide-react";
 
 export default function Analytics() {
   const {
@@ -152,18 +145,11 @@ export default function Analytics() {
   };
 
   return (
-    <div className="h-screen w-full flex bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 relative overflow-hidden">
-      {/* Background Pattern */}
-      <div className="absolute inset-0 opacity-5">
-        <div className="absolute top-20 left-20 w-72 h-72 bg-blue-400 rounded-full mix-blend-multiply filter blur-xl animate-pulse"></div>
-        <div className="absolute top-40 right-20 w-72 h-72 bg-purple-400 rounded-full mix-blend-multiply filter blur-xl animate-pulse animation-delay-2000"></div>
-        <div className="absolute -bottom-8 left-40 w-72 h-72 bg-pink-400 rounded-full mix-blend-multiply filter blur-xl animate-pulse animation-delay-4000"></div>
-      </div>
-
+    <div className="h-screen w-full flex bg-white relative overflow-hidden">
       <div className="flex relative z-10 w-full">
         <AdminSidebar />
-        <main className="flex-1 w-full min-w-0 overflow-y-auto relative z-10 p-8 pb-0 overflow-x-hidden sm:ml-64">
-          <div className="space-y-8">
+        <main className="flex-1 w-full min-w-0 overflow-y-auto relative z-10 p-8 pb-0 overflow-x-hidden sm:ml-[var(--admin-sidebar-width,16rem)]">
+          <div className="space-y-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h1 className="text-3xl sm:text-3xl font-bold text-slate-900 tracking-tight">
@@ -173,20 +159,20 @@ export default function Analytics() {
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
-                <div className="flex flex-wrap items-center gap-2 px-4 py-3 bg-white/80 backdrop-blur-xl border border-white/30 rounded-2xl text-sm font-medium shadow-lg">
+                <div className="flex flex-wrap items-center gap-2 px-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-medium shadow-sm">
                   <span className="text-slate-600">From date</span>
                   <input
                     type="date"
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
-                    className="bg-white/70 border border-white/50 rounded-xl px-3 py-2 text-sm"
+                    className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm"
                   />
 
                   <span className="text-slate-600">Days</span>
                   <select
                     value={days}
                     onChange={(e) => setDays(Number(e.target.value || 14))}
-                    className="bg-white/70 border border-white/50 rounded-xl px-3 py-2 text-sm"
+                    className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm"
                   >
                     {[7, 14, 30, 60, 90].map((d) => (
                       <option key={d} value={d}>
@@ -196,12 +182,12 @@ export default function Analytics() {
                   </select>
                 </div>
 
-                <label className="flex items-center gap-3 px-4 py-3 bg-white/80 backdrop-blur-xl border border-white/30 rounded-2xl text-sm font-medium shadow-lg hover:shadow-xl transition-all duration-300">
+                <label className="flex items-center gap-3 px-4 py-3 bg-white border border-slate-200 rounded-2xl text-sm font-medium shadow-sm">
                   <input
                     type="checkbox"
                     checked={autoRefresh}
                     onChange={(e) => setAutoRefresh(e.target.checked)}
-                    className="rounded-lg"
+                    className="rounded-lg accent-evegah-primary"
                   />
                   Auto-refresh
                 </label>
@@ -209,7 +195,7 @@ export default function Analytics() {
                 <button
                   type="button"
                   onClick={refresh}
-                  className="px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-2xl font-semibold hover:from-indigo-600 hover:to-purple-700 transition-all duration-300 shadow-lg hover:shadow-xl disabled:opacity-60"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-evegah-primary to-brand-medium text-white text-sm font-semibold shadow-lg hover:opacity-95 disabled:opacity-60"
                   disabled={loading}
                 >
                   {loading ? "Refreshing…" : "Refresh"}
@@ -217,27 +203,28 @@ export default function Analytics() {
 
                 <button
                   onClick={exportPDF}
-                  className="px-6 py-3 bg-gradient-to-r from-red-500 to-pink-600 text-white rounded-2xl font-semibold hover:from-red-600 hover:to-pink-700 transition-all duration-300 shadow-lg hover:shadow-xl"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-600 text-white text-sm font-semibold shadow-lg hover:opacity-95"
                 >
                   Export PDF
                 </button>
 
                 <select
-                  className="px-4 py-3 bg-white/80 backdrop-blur-xl border border-white/30 rounded-2xl text-sm font-medium shadow-lg"
                   value={csvDataset}
                   onChange={(e) => setCsvDataset(e.target.value)}
-                  aria-label="CSV dataset"
+                  className="px-3 py-2 rounded-2xl bg-white border border-slate-200 text-sm font-medium shadow-sm"
+                  title="CSV dataset"
                 >
-                  <option value="rides">Rides (daily)</option>
-                  <option value="earnings">Earnings (daily)</option>
-                  <option value="zones">Rides by zone</option>
-                  <option value="active_zones">Active rentals by zone</option>
+                  <option value="rides">CSV: Rides</option>
+                  <option value="earnings">CSV: Earnings</option>
+                  <option value="zones">CSV: Zones</option>
+                  <option value="active_zones">CSV: Active zones</option>
                 </select>
+
 
                 <button
                   type="button"
                   onClick={exportCSV}
-                  className="px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 shadow-lg hover:shadow-xl disabled:opacity-60"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold shadow-lg hover:opacity-95 disabled:opacity-60"
                   disabled={loading}
                 >
                   <span className="inline-flex items-center gap-2">
@@ -262,7 +249,7 @@ export default function Analytics() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
               <Kpi title="Total Riders" value={totalRiders} />
               <Kpi title="Active Riders" value={activeRiders} green />
               <Kpi title="Suspended Riders" value={suspendedRiders} red />
@@ -273,91 +260,36 @@ export default function Analytics() {
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
               <div className="lg:col-span-8">
-                <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/30 hover:shadow-3xl transition-all duration-500">
-                  <div className="flex items-center justify-between gap-4 mb-6">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-2xl flex items-center justify-center shadow-lg">
-                        <BarChart3 className="w-5 h-5 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="text-2xl font-bold text-slate-800">Rides per day</h3>
-                        <p className="text-slate-600">All zones</p>
-                      </div>
-                    </div>
-                  </div>
+                <ChartCard id="ridesChart" title="Rides per day" subtitle="All zones" bodyClassName="min-h-[320px]">
                   <DailyRiderChart data={ridersData} />
-                </div>
+                </ChartCard>
               </div>
 
               <div className="lg:col-span-4">
-                <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/30 hover:shadow-3xl transition-all duration-500">
-                  <div className="flex items-center justify-between gap-4 mb-6">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-pink-500 rounded-2xl flex items-center justify-center shadow-lg">
-                        <MapPin className="w-5 h-5 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="text-2xl font-bold text-slate-800">Rides by zone</h3>
-                        <p className="text-slate-600">All-time distribution</p>
-                      </div>
-                    </div>
-                  </div>
+                <ChartCard id="zoneChart" title="Rides by zone" subtitle="All-time distribution" bodyClassName="min-h-[320px]">
                   <ZonePieChart data={Array.isArray(zoneData) && zoneData.length ? zoneData : zoneStats} />
-                </div>
+                </ChartCard>
               </div>
 
               <div className="lg:col-span-8">
-                <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/30 hover:shadow-3xl transition-all duration-500">
-                  <div className="flex items-center justify-between gap-4 mb-6">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-green-400 to-teal-500 rounded-2xl flex items-center justify-center shadow-lg">
-                        <TrendingUp className="w-5 h-5 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="text-2xl font-bold text-slate-800">Earnings per day</h3>
-                        <p className="text-slate-600">Real-time data</p>
-                      </div>
-                    </div>
-                  </div>
+                <ChartCard id="earningsChart" title="Earnings per day" subtitle="Real-time data" bodyClassName="min-h-[320px]">
                   <EarningsChart data={earningsData} />
-                </div>
+                </ChartCard>
               </div>
 
               <div className="lg:col-span-4">
-                <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/30 hover:shadow-3xl transition-all duration-500">
-                  <div className="flex items-center justify-between gap-4 mb-6">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-red-500 rounded-2xl flex items-center justify-center shadow-lg">
-                        <Users className="w-5 h-5 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="text-2xl font-bold text-slate-800">Rider status</h3>
-                        <p className="text-slate-600">Active vs Suspended</p>
-                      </div>
-                    </div>
-                  </div>
+                <ChartCard id="statusChart" title="Rider status" subtitle="Active vs Suspended" bodyClassName="min-h-[320px]">
                   <RiderStatusPie
                     data={[
                       { name: "Active", value: Number(activeRiders || 0) },
                       { name: "Suspended", value: Number(suspendedRiders || 0) },
                     ]}
                   />
-                </div>
+                </ChartCard>
               </div>
 
               <div className="lg:col-span-12">
-                <div className="bg-white/80 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/30 hover:shadow-3xl transition-all duration-500">
-                  <div className="flex items-center justify-between gap-4 mb-6">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-cyan-400 to-blue-500 rounded-2xl flex items-center justify-center shadow-lg">
-                        <Activity className="w-5 h-5 text-white" />
-                      </div>
-                      <div>
-                        <h3 className="text-2xl font-bold text-slate-800">Active rentals by zone</h3>
-                        <p className="text-slate-600">Currently ongoing rentals</p>
-                      </div>
-                    </div>
-                  </div>
+                <ChartCard id="activeZoneChart" title="Active rentals by zone" subtitle="Currently ongoing rentals" bodyClassName="min-h-[360px]">
                   {activeZoneBarData.length === 0 ? (
                     <div className="h-[280px] flex items-center justify-center text-slate-400 text-lg">No active rentals data</div>
                   ) : (
@@ -367,10 +299,9 @@ export default function Analytics() {
                         <YAxis stroke="#64748b" />
                         <Tooltip
                           contentStyle={{
-                            backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                            border: 'none',
-                            borderRadius: '16px',
-                            boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+                            backgroundColor: "#ffffff",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: "12px",
                           }}
                         />
                         <Bar dataKey="value" fill="url(#activeZoneGradient)" radius={[12, 12, 0, 0]} />
@@ -383,7 +314,7 @@ export default function Analytics() {
                       </BarChart>
                     </ResponsiveContainer>
                   )}
-                </div>
+                </ChartCard>
               </div>
             </div>
 
@@ -397,8 +328,8 @@ export default function Analytics() {
 /* KPI CARD */
 function Kpi({ title, value, green, red }) {
   return (
-    <div className="bg-white/70 backdrop-blur-xl rounded-3xl p-6 shadow-2xl border border-white/30 hover:shadow-3xl hover:scale-105 transition-all duration-500">
-      <p className="text-slate-500 text-sm font-medium uppercase tracking-wider mb-2">{title}</p>
+    <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200">
+      <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-2">{title}</p>
       <h2
         className={`text-3xl font-black ${green ? "text-green-600" : red ? "text-red-600" : "text-slate-800"
           }`}

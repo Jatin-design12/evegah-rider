@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AdminSidebar from "../../components/admin/AdminSidebar";
 
-import { Edit, Eye, Trash2, Battery, TrendingUp, Car, Clock, Zap, User, CheckSquare, Square } from "lucide-react";
+import { Edit, Eye, Trash2, Battery, TrendingUp, Car, Clock, Zap, User, CheckSquare, Square, RefreshCw, Download, FileText, Search, Columns } from "lucide-react";
 
 import {
   adminBatterySwapsDaily,
@@ -16,6 +16,10 @@ import {
 import { BATTERY_ID_OPTIONS } from "../../utils/batteryIds";
 import { VEHICLE_ID_OPTIONS } from "../../utils/vehicleIds";
 import { formatDateTimeDDMMYYYY } from "../../utils/dateFormat";
+import { downloadCsv } from "../../utils/downloadCsv";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
+import { listAuthUsers } from "../../utils/adminUsers";
 
 import {
   Area,
@@ -33,8 +37,46 @@ import {
 const PIE_COLORS = ["#4f46e5", "#22c55e", "#f59e0b", "#ef4444", "#06b6d4"];
 
 export default function AdminBatterySwapsPage() {
+  const VISIBLE_COLS_STORAGE_KEY = "evegah.admin.batterySwaps.visibleCols.v1";
+  const COLUMNS_SCROLL_STORAGE_KEY = "evegah.admin.batterySwaps.columnsDropdownScrollTop.v1";
+  const columnsWrapRef = useRef(null);
+  const columnsListRef = useRef(null);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [search, setSearch] = useState("");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
+
+  const [columnsOpen, setColumnsOpen] = useState(false);
+  const [columnsScrollTop, setColumnsScrollTop] = useState(0);
+  const [visibleCols, setVisibleCols] = useState({
+    rider_full_name: true,
+    rider_mobile: true,
+    swapped_at: true,
+    vehicle_number: true,
+    battery_out: true,
+    battery_in: true,
+    swaps_count: true,
+    actions: true,
+  });
+
+  const columnOptions = [
+    { key: "rider_full_name", label: "Rider" },
+    { key: "rider_mobile", label: "Mobile" },
+    { key: "swapped_at", label: "Last Swap" },
+    { key: "vehicle_number", label: "Vehicle" },
+    { key: "battery_out", label: "Battery Out" },
+    { key: "battery_in", label: "Battery In" },
+    { key: "swaps_count", label: "Swaps" },
+    { key: "actions", label: "Actions" },
+  ];
+
+  const [employeeNameMap, setEmployeeNameMap] = useState(() => new Map());
 
   const [batterySwaps, setBatterySwaps] = useState([]);
   const [batterySwapsDailyData, setBatterySwapsDailyData] = useState([]);
@@ -56,6 +98,121 @@ export default function AdminBatterySwapsPage() {
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailsRows, setDetailsRows] = useState([]);
   const [selectedSwapIds, setSelectedSwapIds] = useState([]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, fromDate, toDate]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(VISIBLE_COLS_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return;
+      setVisibleCols((prev) => ({ ...prev, ...parsed }));
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(VISIBLE_COLS_STORAGE_KEY, JSON.stringify(visibleCols));
+    } catch {
+      // ignore
+    }
+  }, [visibleCols]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(COLUMNS_SCROLL_STORAGE_KEY);
+      if (!raw) return;
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 0) return;
+      setColumnsScrollTop(n);
+    } catch {
+      // ignore
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const onPointerDown = (e) => {
+      if (!columnsOpen) return;
+      const el = columnsWrapRef.current;
+      if (!el) return;
+      if (el.contains(e.target)) return;
+      setColumnsOpen(false);
+    };
+    const onKeyDown = (e) => {
+      if (!columnsOpen) return;
+      if (e.key === "Escape") setColumnsOpen(false);
+    };
+    const onVisibility = () => {
+      if (document.hidden) setColumnsOpen(false);
+    };
+    const onBlur = () => setColumnsOpen(false);
+
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [columnsOpen]);
+
+  useEffect(() => {
+    if (!columnsOpen) return;
+    requestAnimationFrame(() => {
+      const el = columnsListRef.current;
+      if (!el) return;
+      el.scrollTop = columnsScrollTop;
+    });
+  }, [columnsOpen, columnsScrollTop]);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadUsers = async () => {
+      try {
+        const next = new Map();
+
+        // Firebase listUsers is paginated; fetch all pages so we can always map uid/email -> displayName.
+        let pageToken = null;
+        let safety = 0;
+        while (safety < 50) {
+          safety += 1;
+          const data = await listAuthUsers({ pageToken });
+          if (!mounted) return;
+
+          const users = Array.isArray(data?.users) ? data.users : [];
+          users.forEach((u) => {
+            const name = String(u?.displayName || "").trim();
+            if (!name) return;
+            const uid = String(u?.uid || "").trim();
+            const email = String(u?.email || "").trim().toLowerCase();
+            if (uid) next.set(uid, name);
+            if (email) next.set(email, name);
+          });
+
+          pageToken = data?.nextPageToken ? String(data.nextPageToken) : null;
+          if (!pageToken) break;
+        }
+
+        setEmployeeNameMap(next);
+      } catch {
+        // ignore
+      }
+    };
+    loadUsers();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const closeDetails = () => {
     setDetailsOpen(false);
@@ -116,6 +273,23 @@ export default function AdminBatterySwapsPage() {
     return formatDateTimeDDMMYYYY(value, "-");
   };
 
+  const isWithinDateRange = (value, from, to) => {
+    if (!from && !to) return true;
+    if (!value) return false;
+    const t = Date.parse(value);
+    if (!Number.isFinite(t)) return false;
+
+    if (from) {
+      const start = Date.parse(`${from}T00:00:00`);
+      if (Number.isFinite(start) && t < start) return false;
+    }
+    if (to) {
+      const end = Date.parse(`${to}T23:59:59.999`);
+      if (Number.isFinite(end) && t > end) return false;
+    }
+    return true;
+  };
+
   const load = async () => {
     setLoading(true);
     setError("");
@@ -141,6 +315,9 @@ export default function AdminBatterySwapsPage() {
   useEffect(() => {
     let mounted = true;
     load();
+    if (!autoRefresh) return () => {
+      mounted = false;
+    };
     const interval = setInterval(() => {
       if (!mounted) return;
       load();
@@ -150,7 +327,7 @@ export default function AdminBatterySwapsPage() {
       clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [swapRefresh]);
+  }, [swapRefresh, autoRefresh]);
 
   useEffect(() => {
     setSelectedSwapIds((prev) =>
@@ -336,6 +513,128 @@ export default function AdminBatterySwapsPage() {
     return Array.isArray(batterySwaps) ? batterySwaps : [];
   }, [batterySwaps]);
 
+  const riderRows = useMemo(() => {
+    const map = new Map();
+    (visibleSwaps || []).forEach((row) => {
+      const key = String(row?.rider_mobile || row?.rider_id || "").trim();
+      if (!key) return;
+      const list = map.get(key) || [];
+      list.push(row);
+      map.set(key, list);
+    });
+
+    const groups = [];
+    map.forEach((list, key) => {
+      const sorted = [...list].sort((a, b) => {
+        const ta = Date.parse(a?.swapped_at || a?.created_at || "") || 0;
+        const tb = Date.parse(b?.swapped_at || b?.created_at || "") || 0;
+        return tb - ta;
+      });
+      const latest = sorted[0] || {};
+      const lastTime = latest?.swapped_at || latest?.created_at || null;
+      groups.push({
+        _key: key,
+        _count: sorted.length,
+        _latest: latest,
+        rider_full_name: latest?.rider_full_name || "-",
+        rider_mobile: latest?.rider_mobile || key,
+        vehicle_number: latest?.vehicle_number || "-",
+        battery_out: latest?.battery_out || "-",
+        battery_in: latest?.battery_in || "-",
+        swapped_at: lastTime,
+      });
+    });
+
+    groups.sort((a, b) => (Date.parse(b?.swapped_at || "") || 0) - (Date.parse(a?.swapped_at || "") || 0));
+    return groups;
+  }, [visibleSwaps]);
+
+  const filteredRiderRows = useMemo(() => {
+    const q = String(search || "").trim().toLowerCase();
+    const inRange = (r) => isWithinDateRange(r?.swapped_at, fromDate, toDate);
+
+    if (!q) return (riderRows || []).filter(inRange);
+    return (riderRows || []).filter((r) => {
+      if (!inRange(r)) return false;
+      const hay = [
+        r?.rider_full_name,
+        r?.rider_mobile,
+        r?.vehicle_number,
+        r?.battery_out,
+        r?.battery_in,
+      ]
+        .map((v) => String(v || "").toLowerCase())
+        .join(" | ");
+      return hay.includes(q);
+    });
+  }, [riderRows, search, fromDate, toDate]);
+
+  const onColumnsScroll = (e) => {
+    const top = e.currentTarget.scrollTop;
+    setColumnsScrollTop(top);
+    try {
+      localStorage.setItem(COLUMNS_SCROLL_STORAGE_KEY, String(top));
+    } catch {
+      // ignore
+    }
+  };
+
+  const toggleColumn = (key) => {
+    setVisibleCols((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const totalPages = useMemo(() => {
+    return Math.max(1, Math.ceil((filteredRiderRows || []).length / pageSize));
+  }, [filteredRiderRows.length]);
+
+  const pageRows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return (filteredRiderRows || []).slice(start, start + pageSize);
+  }, [filteredRiderRows, page]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+
+  const exportCsv = () => {
+    downloadCsv({
+      filename: `battery_swaps_riders_${new Date().toISOString().slice(0, 10)}.csv`,
+      columns: [
+        { key: "rider_full_name", header: "Rider" },
+        { key: "rider_mobile", header: "Mobile" },
+        { key: "swapped_at", header: "Last Swap" },
+        { key: "vehicle_number", header: "Vehicle" },
+        { key: "battery_out", header: "Battery Out" },
+        { key: "battery_in", header: "Battery In" },
+        { key: "_count", header: "Swaps" },
+      ],
+      rows: (filteredRiderRows || []).map((r) => ({
+        ...r,
+        swapped_at: fmtSwapTime(r?.swapped_at) || "-",
+      })),
+    });
+  };
+
+  const exportPdf = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text("EVegah – Battery Swaps (Rider Summary)", 14, 18);
+    autoTable(doc, {
+      startY: 26,
+      head: [["Rider", "Mobile", "Last Swap", "Vehicle", "Battery Out", "Battery In", "Swaps"]],
+      body: (filteredRiderRows || []).map((r) => [
+        r?.rider_full_name || "-",
+        r?.rider_mobile || "-",
+        fmtSwapTime(r?.swapped_at) || "-",
+        r?.vehicle_number || "-",
+        r?.battery_out || "-",
+        r?.battery_in || "-",
+        String(r?._count ?? "-"),
+      ]),
+    });
+    doc.save(`battery-swaps-riders_${new Date().toISOString().slice(0, 10)}.pdf`);
+  };
+
   const visibleSwapIds = useMemo(
     () => visibleSwaps.map((row) => String(row?.id || "")),
     [visibleSwaps]
@@ -367,12 +666,60 @@ export default function AdminBatterySwapsPage() {
 
       <div className="flex relative z-10 w-full">
         <AdminSidebar />
-        <main className="flex-1 w-full min-w-0 overflow-y-auto relative z-10 p-8 pb-0 overflow-x-hidden sm:ml-64">
+        <main className="flex-1 w-full min-w-0 overflow-y-auto relative z-10 p-8 pb-0 overflow-x-hidden sm:ml-[var(--admin-sidebar-width,16rem)]">
           <div className="p-6">
             {/* Header */}
-            <div className="mb-8">
-              <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">Battery Swaps</h1>
-              <p className="text-slate-600 mt-2 text-base font-normal">View, edit, and delete battery swap records.</p>
+            <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h1 className="text-3xl sm:text-4xl font-bold text-slate-900 tracking-tight">Battery Swaps</h1>
+                <p className="text-slate-600 mt-2 text-base font-normal">View, edit, and manage battery swap records.</p>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <label className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/70 backdrop-blur border border-white/30 shadow-sm text-sm font-semibold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={autoRefresh}
+                    onChange={(e) => setAutoRefresh(e.target.checked)}
+                    className="h-4 w-4 rounded accent-evegah-primary"
+                  />
+                  <span className="hidden sm:inline">Auto-refresh</span>
+                  <span className="sm:hidden">Auto</span>
+                </label>
+
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-evegah-primary to-brand-medium text-white text-sm font-semibold shadow-lg hover:opacity-95 disabled:opacity-60"
+                  disabled={swapBusy}
+                  onClick={() => setSwapRefresh((x) => x + 1)}
+                  title="Refresh"
+                >
+                  <RefreshCw size={16} />
+                  <span className="hidden sm:inline">Refresh</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold shadow-lg hover:opacity-95"
+                  onClick={exportCsv}
+                  title="Export CSV"
+                >
+                  <Download size={16} />
+                  <span className="hidden sm:inline">Export CSV</span>
+                  <span className="sm:hidden">CSV</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-600 text-white text-sm font-semibold shadow-lg hover:opacity-95"
+                  onClick={exportPdf}
+                  title="Export PDF"
+                >
+                  <FileText size={16} />
+                  <span className="hidden sm:inline">Export PDF</span>
+                  <span className="sm:hidden">PDF</span>
+                </button>
+              </div>
             </div>
 
             {error ? (
@@ -460,246 +807,186 @@ export default function AdminBatterySwapsPage() {
               </div>
             </div>
 
-            <div className="bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl border border-white/30 overflow-hidden">
-              <div className="p-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-                <h2 className="text-base font-semibold text-evegah-text">Battery Swaps</h2>
+            <div className="bg-white/70 backdrop-blur-xl rounded-2xl shadow-xl border border-white/30 overflow-hidden relative z-0">
+              <div className="relative z-30 bg-white/80 backdrop-blur-xl border border-evegah-border p-4 flex flex-wrap items-center gap-4">
+                <div className="flex items-center bg-slate-50 px-4 py-3 rounded-2xl border border-slate-200 w-full md:w-96 focus-within:ring-2 focus-within:ring-evegah-primary/20">
+                  <Search size={18} className="text-slate-600" />
+                  <input
+                    className="bg-transparent outline-none ml-3 w-full text-base font-normal placeholder-slate-400"
+                    placeholder="Search rider, mobile, vehicle, battery…"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
 
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex items-center gap-2">
-                    {selectedSwapIds.length > 0 ? (
-                      <span className="text-xs text-red-600">
-                        {selectedSwapIds.length} selected
-                      </span>
-                    ) : null}
-                    <button
-                      type="button"
-                      className="btn-outline text-red-600"
-                      disabled={selectedSwapIds.length === 0 || swapBusy}
-                      onClick={bulkDeleteSelected}
-                    >
-                      Delete Selected
-                    </button>
-                  </div>
+                <div className="flex flex-wrap items-center gap-3 px-4 py-3 bg-white rounded-2xl text-sm font-semibold border border-slate-200">
+                  <span className="text-slate-600">From</span>
+                  <input
+                    type="date"
+                    value={fromDate}
+                    onChange={(e) => setFromDate(e.target.value)}
+                    className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-evegah-primary/20"
+                  />
 
+                  <span className="text-slate-600">To</span>
+                  <input
+                    type="date"
+                    value={toDate}
+                    onChange={(e) => setToDate(e.target.value)}
+                    className="bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-evegah-primary/20"
+                  />
+                </div>
+
+                <div ref={columnsWrapRef} className="relative ml-auto z-[2000]">
                   <button
                     type="button"
-                    className="btn-primary"
-                    disabled={swapBusy}
-                    onClick={() => setSwapRefresh((x) => x + 1)}
+                    onClick={() => setColumnsOpen((v) => !v)}
+                    className={`h-12 w-12 rounded-2xl grid place-items-center bg-white border border-slate-200 text-evegah-primary shadow-sm hover:bg-brand-light/60 ${columnsOpen ? "ring-2 ring-evegah-primary/30" : ""}`}
+                    aria-label="Toggle columns"
+                    title="Columns"
                   >
-                    Refresh
+                    <Columns size={18} />
                   </button>
+                  {columnsOpen ? (
+                    <div className="absolute right-0 z-[2000] mt-2 w-56 rounded-2xl border border-slate-200 bg-white shadow-2xl p-3">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 mb-2">Toggle Columns</p>
+                      <div ref={columnsListRef} onScroll={onColumnsScroll} className="max-h-72 overflow-auto pr-1 space-y-2">
+                        {columnOptions.map((col) => (
+                          <label key={col.key} className="flex items-center gap-2 text-sm text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(visibleCols[col.key])}
+                              onChange={() => toggleColumn(col.key)}
+                              className="rounded"
+                            />
+                            {col.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
               {loading && (batterySwaps || []).length === 0 ? (
-                <div className="p-6 text-center text-gray-500">Loading swaps…</div>
-              ) : visibleSwaps.length === 0 ? (
-                <div className="p-6 text-center text-gray-500">No swaps found.</div>
+                <div className="p-6 text-center text-slate-500">Loading swaps…</div>
+              ) : filteredRiderRows.length === 0 ? (
+                <div className="p-6 text-center text-slate-500">No riders found.</div>
               ) : (
-                <div className="space-y-4">
-                  {/* Bulk Actions Bar */}
-                  <div className="flex items-center justify-between bg-white/60 backdrop-blur-xl rounded-2xl p-4 border border-white/30">
-                    <div className="flex items-center gap-4">
-                      <label className="flex items-center gap-3 text-slate-700 font-medium">
-                        <input
-                          type="checkbox"
-                          checked={allVisibleSelected}
-                          onChange={toggleSelectVisible}
-                          className="w-4 h-4 text-blue-600 bg-white/50 border-white/50 rounded focus:ring-blue-500/50"
-                        />
-                        Select All ({visibleSwaps.length})
-                      </label>
-                      {selectedSwapIds.length > 0 && (
-                        <span className="text-sm text-blue-600 font-semibold bg-blue-100/80 px-3 py-1 rounded-full">
-                          {selectedSwapIds.length} selected
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3">
-                      {selectedSwapIds.length > 0 && (
-                        <button
-                          type="button"
-                          className="px-4 py-2 rounded-xl bg-red-500 text-white text-sm font-semibold shadow-lg hover:bg-red-600 transition-all duration-200"
-                          disabled={swapBusy}
-                          onClick={bulkDeleteSelected}
-                        >
-                          Delete Selected
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="px-4 py-2 rounded-xl bg-blue-500 text-white text-sm font-semibold shadow-lg hover:bg-blue-600 transition-all duration-200"
-                        disabled={swapBusy}
-                        onClick={() => setSwapRefresh((x) => x + 1)}
-                      >
-                        Refresh
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Cards Grid */}
-                  <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {visibleSwaps.map((row, index) => (
-                      <div
-                        key={row?.id}
-                        className="group relative bg-white/70 backdrop-blur-xl rounded-3xl p-6 shadow-xl border border-white/30 hover:shadow-2xl hover:scale-102 transition-all duration-300 cursor-pointer overflow-hidden"
-                      >
-                        {/* Selection Indicator */}
-                        <div className="absolute top-4 right-4 z-10">
-                          <button
-                            type="button"
-                            onClick={() => toggleSwapSelection(row?.id)}
-                            className="w-8 h-8 rounded-xl bg-white/80 backdrop-blur-sm border border-white/40 flex items-center justify-center hover:bg-white/90 transition-all duration-200"
-                          >
-                            {selectedSwapIds.includes(String(row?.id || "")) ? (
-                              <CheckSquare className="w-4 h-4 text-blue-600" />
-                            ) : (
-                              <Square className="w-4 h-4 text-slate-400" />
-                            )}
-                          </button>
-                        </div>
-
-                        {/* Floating geometric shapes */}
-                        <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-blue-400/10 to-purple-400/10 rounded-full -translate-y-8 translate-x-8 group-hover:scale-110 transition-transform duration-500"></div>
-                        <div className="absolute bottom-0 left-0 w-16 h-16 bg-gradient-to-br from-purple-400/10 to-pink-400/10 rounded-2xl translate-y-6 -translate-x-6 group-hover:rotate-12 transition-transform duration-500"></div>
-
-                        <div className="relative z-10">
-                          {/* Header */}
-                          <div className="flex items-start justify-between mb-4">
-                            <div className="flex items-center gap-3">
-                              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
-                                <Zap className="w-6 h-6 text-white" />
-                              </div>
-                              <div>
-                                <h3 className="text-lg font-bold text-slate-900">Swap #{String(row?.id || "").slice(-4)}</h3>
-                                <p className="text-sm text-slate-500">Battery Exchange</p>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Content Grid */}
-                          <div className="grid grid-cols-2 gap-4 mb-4">
-                            <div className="space-y-3">
-                              <div className="flex items-center gap-2">
-                                <Clock className="w-4 h-4 text-slate-400" />
-                                <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Time</span>
-                              </div>
-                              <p className="text-sm font-semibold text-slate-800">{fmtSwapTime(row?.swapped_at || row?.created_at)}</p>
-                            </div>
-
-                            <div className="space-y-3">
-                              <div className="flex items-center gap-2">
-                                <Car className="w-4 h-4 text-slate-400" />
-                                <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Vehicle</span>
-                              </div>
-                              <p className="text-sm font-semibold text-slate-800">{row?.vehicle_number || "-"}</p>
-                            </div>
-
-                            <div className="space-y-3">
-                              <div className="flex items-center gap-2">
-                                <Battery className="w-4 h-4 text-red-400" />
-                                <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Battery Out</span>
-                              </div>
-                              <p className="text-sm font-semibold text-red-600">{row?.battery_out || "-"}</p>
-                            </div>
-
-                            <div className="space-y-3">
-                              <div className="flex items-center gap-2">
-                                <Battery className="w-4 h-4 text-green-400" />
-                                <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Battery In</span>
-                              </div>
-                              <p className="text-sm font-semibold text-green-600">{row?.battery_in || "-"}</p>
-                            </div>
-                          </div>
-
-                          {/* Rider Info */}
-                          <div className="bg-slate-50/50 rounded-2xl p-3 mb-4">
-                            <div className="flex items-center gap-2 mb-2">
-                              <User className="w-4 h-4 text-slate-400" />
-                              <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Rider</span>
-                            </div>
-                            <p className="text-sm font-semibold text-slate-800">{row?.rider_full_name || row?.rider_mobile || "-"}</p>
-                            {row?.rider_mobile && (
-                              <p className="text-xs text-slate-500 mt-1">{row.rider_mobile}</p>
-                            )}
-                          </div>
-
-                          {/* Actions */}
-                          <div className="flex items-center justify-between pt-3 border-t border-white/30">
-                            <div className="flex items-center gap-2">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm font-normal">
+                    <thead className="bg-slate-100">
+                      <tr>
+                        {visibleCols.rider_full_name ? (
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">Rider</th>
+                        ) : null}
+                        {visibleCols.rider_mobile ? (
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">Mobile</th>
+                        ) : null}
+                        {visibleCols.swapped_at ? (
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">Last Swap</th>
+                        ) : null}
+                        {visibleCols.vehicle_number ? (
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">Vehicle</th>
+                        ) : null}
+                        {visibleCols.battery_out ? (
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">Battery Out</th>
+                        ) : null}
+                        {visibleCols.battery_in ? (
+                          <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">Battery In</th>
+                        ) : null}
+                        {visibleCols.swaps_count ? (
+                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-700">Swaps</th>
+                        ) : null}
+                        {visibleCols.actions ? (
+                          <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wider text-slate-700">Actions</th>
+                        ) : null}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pageRows.map((r) => (
+                        <tr key={r._key} className="border-t hover:bg-slate-50/50 transition-colors">
+                          {visibleCols.rider_full_name ? (
+                            <td className="px-4 py-3 font-semibold text-slate-900 whitespace-nowrap">{r.rider_full_name || "-"}</td>
+                          ) : null}
+                          {visibleCols.rider_mobile ? (
+                            <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{r.rider_mobile || "-"}</td>
+                          ) : null}
+                          {visibleCols.swapped_at ? (
+                            <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{fmtSwapTime(r.swapped_at) || "-"}</td>
+                          ) : null}
+                          {visibleCols.vehicle_number ? (
+                            <td className="px-4 py-3 text-slate-600 whitespace-nowrap">{r.vehicle_number || "-"}</td>
+                          ) : null}
+                          {visibleCols.battery_out ? (
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className="inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold bg-rose-100 text-rose-700">
+                                {r.battery_out || "-"}
+                              </span>
+                            </td>
+                          ) : null}
+                          {visibleCols.battery_in ? (
+                            <td className="px-4 py-3 whitespace-nowrap">
+                              <span className="inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold bg-emerald-100 text-emerald-700">
+                                {r.battery_in || "-"}
+                              </span>
+                            </td>
+                          ) : null}
+                          {visibleCols.swaps_count ? (
+                            <td className="px-4 py-3 text-right text-slate-700 font-semibold whitespace-nowrap">{r._count}</td>
+                          ) : null}
+                          {visibleCols.actions ? (
+                            <td className="px-4 py-3 text-right whitespace-nowrap">
                               <button
                                 type="button"
-                                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-100 transition-all duration-200 text-sm font-medium"
+                                className="p-2 rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 transition-colors"
                                 onClick={() =>
                                   openDetailsWithSearch({
-                                    title: row?.vehicle_number ? `Vehicle ${row.vehicle_number}` : "Swap Details",
-                                    subtitle: row?.rider_mobile
-                                      ? `Rider: ${row.rider_full_name || "-"} (${row.rider_mobile})`
+                                    title: "Battery Swap History",
+                                    subtitle: r?.rider_mobile
+                                      ? `Rider: ${r?.rider_full_name || "-"} (${r?.rider_mobile})`
                                       : "Swap history",
-                                    search: row?.vehicle_number || row?.rider_mobile || "",
-                                    selectedRow: row,
+                                    search: r?.rider_mobile || "",
+                                    selectedRow: null,
                                   })
                                 }
+                                title="View history"
+                                aria-label="View history"
                               >
-                                <Eye className="w-4 h-4" />
-                                View
+                                <Eye size={16} />
                               </button>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                className="p-2 rounded-xl bg-slate-50 text-slate-600 hover:bg-slate-100 transition-all duration-200"
-                                title="Edit"
-                                disabled={swapBusy}
-                                onClick={() => {
-                                  openDetailsWithSearch({
-                                    title: row?.vehicle_number ? `Vehicle ${row.vehicle_number}` : "Swap Details",
-                                    subtitle: row?.rider_mobile
-                                      ? `Rider: ${row.rider_full_name || "-"} (${row.rider_mobile})`
-                                      : "Swap history",
-                                    search: row?.vehicle_number || row?.rider_mobile || "",
-                                    selectedRow: row,
-                                  });
-                                  setDetailsMode("edit");
-                                  startEditSwap(row);
-                                }}
-                              >
-                                <Edit className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                className="p-2 rounded-xl bg-red-50 text-red-600 hover:bg-red-100 transition-all duration-200"
-                                title="Delete"
-                                disabled={swapBusy}
-                                onClick={async () => {
-                                  await deleteSwap(row?.id);
-                                  setSwapRefresh((x) => x + 1);
-                                }}
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Empty State */}
-                  {visibleSwaps.length === 0 && (
-                    <div className="text-center py-12">
-                      <div className="w-24 h-24 mx-auto mb-4 rounded-full bg-slate-100 flex items-center justify-center">
-                        <Battery className="w-12 h-12 text-slate-400" />
-                      </div>
-                      <h3 className="text-lg font-semibold text-slate-900 mb-2">No Battery Swaps Found</h3>
-                      <p className="text-slate-500">There are no battery swap records to display.</p>
-                    </div>
-                  )}
+                            </td>
+                          ) : null}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
+            </div>
 
+            <div className="mt-4 flex items-center justify-between">
+              <div className="text-sm text-slate-600 font-medium">Page {page} / {totalPages}</div>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  className="px-5 py-3 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all disabled:opacity-50"
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  title="Previous"
+                >
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  className="px-5 py-3 rounded-2xl bg-white border border-slate-200 shadow-sm hover:shadow-md transition-all disabled:opacity-50"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  title="Next"
+                >
+                  Next
+                </button>
+              </div>
             </div>
           </div>
         </main>
@@ -1068,13 +1355,26 @@ export default function AdminBatterySwapsPage() {
                         (detailsRows || []).map((row) => (
                           <tr key={row.id}>
                             <td className="py-2 pr-3 whitespace-nowrap">{fmtSwapTime(row.swapped_at || row.created_at)}</td>
-                            <td className="py-2 pr-3 whitespace-nowrap">{row.rider_full_name || "-"}</td>
-                            <td className="py-2 pr-3 whitespace-nowrap text-evegah-muted">{row.rider_mobile || "-"}</td>
-                            <td className="py-2 pr-3 whitespace-nowrap">{row.vehicle_number || "-"}</td>
-                            <td className="py-2 pr-3 whitespace-nowrap">{row.battery_out || "-"}</td>
-                            <td className="py-2 pr-3 whitespace-nowrap">{row.battery_in || "-"}</td>
-                            <td className="py-2 pr-3 whitespace-nowrap text-evegah-muted">{row.employee_email || "-"}</td>
-                            <td className="py-2">{row.notes || "-"}</td>
+                            <td className="py-2 pr-3 whitespace-nowrap">{row.rider_full_name || "N/A"}</td>
+                            <td className="py-2 pr-3 whitespace-nowrap text-evegah-muted">{row.rider_mobile || "N/A"}</td>
+                            <td className="py-2 pr-3 whitespace-nowrap">{row.vehicle_number || "N/A"}</td>
+                            <td className="py-2 pr-3 whitespace-nowrap">{row.battery_out || "N/A"}</td>
+                            <td className="py-2 pr-3 whitespace-nowrap">{row.battery_in || "N/A"}</td>
+                            <td className="py-2 pr-3 whitespace-nowrap text-evegah-muted">
+                              {employeeNameMap.get(String(row.employee_uid || "").trim()) ||
+                                employeeNameMap.get(String(row.employee_email || "").trim().toLowerCase()) ||
+                                row.employee_email ||
+                                "N/A"}
+                            </td>
+                            <td className="py-2">
+                              {row.notes ? (
+                                row.notes
+                              ) : (
+                                <span className="inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold bg-slate-100 text-slate-700">
+                                  Paid Battery
+                                </span>
+                              )}
+                            </td>
                           </tr>
                         ))
                       )}

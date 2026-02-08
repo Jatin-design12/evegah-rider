@@ -223,13 +223,13 @@ export default function BatterySwaps() {
         : {
             key,
             rider_id: riderId || null,
-            rider_full_name: r?.rider_full_name || "-",
-            rider_mobile: r?.rider_mobile || "-",
+            rider_full_name: r?.rider_full_name || "N/A",
+            rider_mobile: r?.rider_mobile || "N/A",
             swapCount: 1,
             lastSwappedAtMs: swappedAtMs,
             lastVehicle: r?.vehicle_number || "",
-            lastBatteryOut: r?.battery_out || "",
-            lastBatteryIn: r?.battery_in || "",
+            lastBatteryOut: r?.battery_out || "N/A",
+            lastBatteryIn: r?.battery_in || "N/A",
           };
 
       map.set(key, next);
@@ -587,7 +587,7 @@ export default function BatterySwaps() {
                 <div>
                   <h3 className="text-base font-semibold text-evegah-text">Rider Swaps</h3>
                   <p className="text-sm text-gray-500">
-                    {riderDetails?.rider_full_name || "-"} • {riderDetails?.rider_mobile || "-"}
+                    {riderDetails?.rider_full_name || "N/A"} • {riderDetails?.rider_mobile || "N/A"}
                   </p>
                 </div>
                 <button
@@ -624,9 +624,9 @@ export default function BatterySwaps() {
                       <tbody>
                         {riderSwapRows.map((r) => (
                           <tr key={r.id} className="border-b last:border-b-0">
-                            <td className="py-3 pr-3">{r.vehicle_number}</td>
-                            <td className="py-3 pr-3">{r.battery_out}</td>
-                            <td className="py-3 pr-3">{r.battery_in}</td>
+                            <td className="py-3 pr-3">{r.vehicle_number || "N/A"}</td>
+                            <td className="py-3 pr-3">{r.battery_out || "N/A"}</td>
+                            <td className="py-3 pr-3">{r.battery_in || "N/A"}</td>
                             <td className="py-3 pr-3 text-gray-500">
                               {formatDateTimeDDMMYYYY(r.swapped_at, "-")}
                             </td>
@@ -703,7 +703,7 @@ export default function BatterySwaps() {
         </div>
 
         <div className="grid grid-cols-1 items-start gap-4 xl:grid-cols-12">
-          <div className="xl:col-span-5">
+          <div className="xl:col-span-12">
             <div className="card border-0 bg-white shadow-card">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -716,9 +716,9 @@ export default function BatterySwaps() {
                 </div>
               </div>
 
-              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 items-end">
                 <div>
-                  <label className="label">Rider (optional)</label>
+                  <label className="label">Select Rider</label>
                   <div ref={riderDropdownRef} className="relative">
                     <button
                       type="button"
@@ -767,7 +767,7 @@ export default function BatterySwaps() {
                             <div className="px-3 py-2 text-sm text-gray-500">No matching riders.</div>
                           ) : (
                             filteredRiders.map((rider) => {
-                              const label = rider?.full_name || rider?.mobile || "Unknown rider";
+                              const label = rider?.full_name || rider?.mobile || "N/A";
                               const sub = rider?.mobile || rider?.aadhaar || "";
                               const selected = normalizeForCompare(rider?.id) === normalizeForCompare(form.riderId);
                               return (
@@ -1007,7 +1007,7 @@ export default function BatterySwaps() {
             {errors.batteryIn && <p className="error">{errors.batteryIn}</p>}
                 </div>
 
-                <div className="sm:col-span-2 lg:col-span-4">
+                <div className="sm:col-span-3 lg:col-span-3">
                   <label className="label">Notes</label>
                   <input
                     className="input"
@@ -1017,8 +1017,8 @@ export default function BatterySwaps() {
                   />
                 </div>
 
-                <div className="sm:col-span-2 lg:col-span-4 flex justify-end">
-                  <button type="button" className="btn-primary shadow-sm" onClick={submit}>
+                <div className="sm:col-span-2 lg:col-span-1 flex justify-end">
+                  <button type="button" className="btn-primary shadow-sm w-full lg:w-auto" onClick={submit}>
                     Save Swap
                   </button>
                 </div>
@@ -1067,8 +1067,8 @@ export default function BatterySwaps() {
                               if (g.rider_id) openRiderDetails(g);
                             }}
                           >
-                            <td className="py-3 pr-3">{g.rider_full_name || "-"}</td>
-                            <td className="py-3 pr-3">{g.rider_mobile || "-"}</td>
+                            <td className="py-3 pr-3">{g.rider_full_name || "N/A"}</td>
+                            <td className="py-3 pr-3">{g.rider_mobile || "N/A"}</td>
                             <td className="py-3 pr-3 font-medium text-evegah-text">{g.swapCount}</td>
                             <td className="py-3 pr-3">{g.lastVehicle || "-"}</td>
                             <td className="py-3 pr-3 text-gray-500">
