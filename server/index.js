@@ -23,7 +23,9 @@ const __dirname = path.dirname(__filename);
 
 // Prefer server/.env so local DB config stays with the API.
 // Use override so a globally-set DATABASE_URL doesn't silently take precedence.
+// Allow local overrides in server/.env.local (not committed) for dev.
 dotenv.config({ path: path.join(__dirname, ".env"), override: true });
+dotenv.config({ path: path.join(__dirname, ".env.local"), override: true });
 
 const app = express();
 app.use(
@@ -819,6 +821,30 @@ function parseScopeList(raw) {
     .join(" ");
 }
 
+function parseOriginList(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return [];
+  return s
+    .split(/[\s,]+/g)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+function tryGetOriginFromUrl(value) {
+  const s = String(value || "").trim();
+  if (!s) return "";
+  try {
+    return new URL(s).origin;
+  } catch {
+    return "";
+  }
+}
+
+function isLocalHostname(hostname) {
+  const h = String(hostname || "").trim().toLowerCase();
+  return h === "localhost" || h === "127.0.0.1" || h === "::1";
+}
+
 function removeScope(scopeStr, scopeToRemove) {
   const target = String(scopeToRemove || "").trim().toLowerCase();
   if (!target) return String(scopeStr || "").trim();
@@ -1081,6 +1107,8 @@ const DIGILOCKER = {
   webOrigin: envStr("PUBLIC_WEB_ORIGIN"),
 };
 
+const DIGILOCKER_ALLOWED_WEB_ORIGINS = parseOriginList(envStr("PUBLIC_WEB_ORIGIN"));
+
 const DIGILOCKER_ENABLED = Boolean(
   DIGILOCKER.clientId &&
   DIGILOCKER.clientSecret &&
@@ -1246,6 +1274,12 @@ app.get("/api/digilocker/status", (_req, res) => {
       scopes: Boolean(DIGILOCKER.scopes),
       webOrigin: Boolean(DIGILOCKER.webOrigin),
     },
+    effective: {
+      redirectUri: DIGILOCKER.redirectUri || "",
+      webOrigin: DIGILOCKER.webOrigin || "",
+      usePkce: Boolean(DIGILOCKER.usePkce),
+      tokenAuthMethod: DIGILOCKER.tokenAuthMethod || "body",
+    },
   });
 });
 
@@ -1290,6 +1324,21 @@ app.post("/api/digilocker/auth-url", requireUser, (req, res) => {
     createdAtMs: Date.now(),
     aadhaarLast4,
   };
+
+  // Remember the web app origin that initiated the popup flow.
+  // This is used to postMessage back to the correct origin on callback.
+  const requestOrigin = String(req.get("origin") || "").trim();
+  const requestRefererOrigin = tryGetOriginFromUrl(req.get("referer") || "");
+  const candidateOrigin = requestOrigin || requestRefererOrigin;
+  const isDev = String(process.env.NODE_ENV || "").toLowerCase() !== "production";
+  const isLocalApi = isLocalHostname(req.hostname);
+  if (candidateOrigin) {
+    const allowAny = (isDev || isLocalApi) && DIGILOCKER_ALLOWED_WEB_ORIGINS.length === 0;
+    const allowListed = DIGILOCKER_ALLOWED_WEB_ORIGINS.includes(candidateOrigin);
+    if (allowAny || allowListed || isLocalApi) {
+      statePayload.webOrigin = candidateOrigin;
+    }
+  }
 
   // APISetu portal generated URLs typically use PKCE (S256).
   let pkce = null;
@@ -1337,7 +1386,14 @@ app.get("/api/digilocker/callback", async (req, res) => {
   const oauthError = String(req.query?.error || "").trim();
   const oauthErrorDescription = String(req.query?.error_description || "").trim();
 
-  const targetOrigin = DIGILOCKER.webOrigin || "*";
+  const isDev = String(process.env.NODE_ENV || "").toLowerCase() !== "production";
+  // Prefer the exact origin that initiated the flow; fallback to configured PUBLIC_WEB_ORIGIN.
+  // In dev, allow '*' to avoid local/prod origin mismatches.
+  const stateEntryForOrigin = state ? digilockerStateStore.get(state) : null;
+  const targetOrigin =
+    String(stateEntryForOrigin?.webOrigin || "").trim() ||
+    String(DIGILOCKER.webOrigin || "").trim() ||
+    (isDev ? "*" : "*");
 
   const sendPopupResult = (payload) => {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
@@ -1429,6 +1485,17 @@ app.get("/api/digilocker/callback", async (req, res) => {
   }
 
   try {
+    const wrapStepError = (step, err, { url } = {}) => {
+      const status = err?.status ? ` (${err.status})` : "";
+      const base = String(err?.message || err || "Unknown error");
+      const target = url ? ` (${String(url)})` : "";
+      const e2 = new Error(`${step}${status}: ${base}${target}`);
+      if (err?.status) e2.status = err.status;
+      if (err?.data !== undefined) e2.data = err.data;
+      e2.step = step;
+      throw e2;
+    };
+
     const tokenHeaders = {};
     const tokenBody = {
       grant_type: "authorization_code",
@@ -1469,9 +1536,15 @@ app.get("/api/digilocker/callback", async (req, res) => {
         message.includes("disable") &&
         message.includes("openid") &&
         String(DIGILOCKER.tokenUrl || "").includes("/oauth2/1/token");
-      if (!canRetry) throw e;
+      if (!canRetry) {
+        wrapStepError("DigiLocker token exchange failed", e, { url: DIGILOCKER.tokenUrl });
+      }
       const tokenUrl2 = String(DIGILOCKER.tokenUrl).replace("/oauth2/1/token", "/oauth2/2/token");
-      token = await exchangeToken(tokenUrl2);
+      try {
+        token = await exchangeToken(tokenUrl2);
+      } catch (e2) {
+        wrapStepError("DigiLocker token exchange retry failed", e2, { url: tokenUrl2 });
+      }
     }
 
     const accessToken = String(token?.access_token || "").trim();
@@ -1486,7 +1559,9 @@ app.get("/api/digilocker/callback", async (req, res) => {
       try {
         userinfo = await fetchJson(DIGILOCKER.userinfoUrl, { headers: authzHeaders });
       } catch (e) {
-        userinfo = { error: String(e?.message || e) };
+        userinfo = {
+          error: `userinfo failed${e?.status ? ` (${e.status})` : ""}: ${String(e?.message || e)}`,
+        };
       }
     }
 
@@ -1495,7 +1570,9 @@ app.get("/api/digilocker/callback", async (req, res) => {
       try {
         aadhaar = await fetchJson(DIGILOCKER.aadhaarUrl, { headers: authzHeaders });
       } catch (e) {
-        aadhaar = { error: String(e?.message || e) };
+        aadhaar = {
+          error: `eaadhaar failed${e?.status ? ` (${e.status})` : ""}: ${String(e?.message || e)}`,
+        };
       }
     }
 
@@ -1543,7 +1620,8 @@ app.get("/api/digilocker/callback", async (req, res) => {
       },
     });
   } catch (e) {
-    const message = String(e?.message || e || "DigiLocker error");
+    const status = e?.status ? ` (${e.status})` : "";
+    const message = `DigiLocker error${status}: ${String(e?.message || e || "Unknown")}`;
     return sendPopupResult({ type: "DIGILOCKER_RESULT", ok: false, error: message });
   }
 });
@@ -2430,8 +2508,40 @@ app.delete("/api/riders/:id", async (req, res) => {
   if (!id) return res.status(400).json({ error: "id required" });
 
   try {
-    await pool.query(`delete from public.riders where id = $1`, [id]);
-    res.json({ ok: true });
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+
+      // Delete battery swaps that belong to this rider's rentals (prevents 'N/A' rows
+      // from lingering in employee battery swap dashboards after rider deletion).
+      const swapsDeleted = await client.query(
+        `delete from public.battery_swaps s
+         where exists (
+           select 1
+           from public.rentals r
+           left join lateral (
+             select max(returned_at) as returned_at
+             from public.returns rt
+             where rt.rental_id = r.id
+           ) ret on true
+           where r.rider_id = $1
+             and regexp_replace(lower(coalesce(r.vehicle_number,'')),'[^a-z0-9]+','','g') =
+                 regexp_replace(lower(coalesce(s.vehicle_number,'')),'[^a-z0-9]+','','g')
+             and r.start_time <= coalesce(s.swapped_at, s.created_at)
+             and (ret.returned_at is null or ret.returned_at > coalesce(s.swapped_at, s.created_at))
+         )`,
+        [id]
+      );
+
+      await client.query(`delete from public.riders where id = $1`, [id]);
+      await client.query("commit");
+      res.json({ ok: true, swapsDeleted: swapsDeleted.rowCount || 0 });
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
   } catch (error) {
     res.status(500).json({ error: String(error?.message || error) });
   }
@@ -2446,11 +2556,42 @@ app.post("/api/riders/bulk-delete", async (req, res) => {
   }
 
   try {
-    const { rowCount } = await pool.query(
-      `delete from public.riders where id = any($1::text[])`,
-      [ids]
-    );
-    res.json({ deleted: rowCount });
+    const client = await pool.connect();
+    try {
+      await client.query("begin");
+
+      const swapsDeleted = await client.query(
+        `delete from public.battery_swaps s
+         where exists (
+           select 1
+           from public.rentals r
+           left join lateral (
+             select max(returned_at) as returned_at
+             from public.returns rt
+             where rt.rental_id = r.id
+           ) ret on true
+           where r.rider_id = any($1::text[])
+             and regexp_replace(lower(coalesce(r.vehicle_number,'')),'[^a-z0-9]+','','g') =
+                 regexp_replace(lower(coalesce(s.vehicle_number,'')),'[^a-z0-9]+','','g')
+             and r.start_time <= coalesce(s.swapped_at, s.created_at)
+             and (ret.returned_at is null or ret.returned_at > coalesce(s.swapped_at, s.created_at))
+         )`,
+        [ids]
+      );
+
+      const { rowCount } = await client.query(
+        `delete from public.riders where id = any($1::text[])`,
+        [ids]
+      );
+
+      await client.query("commit");
+      res.json({ deleted: rowCount, swapsDeleted: swapsDeleted.rowCount || 0 });
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
   } catch (error) {
     res.status(500).json({ error: String(error?.message || error) });
   }
@@ -3686,16 +3827,20 @@ app.get("/api/riders/:id/battery-swaps", async (req, res) => {
                 rd.mobile as rider_mobile
          from public.rentals r
          left join public.riders rd on rd.id = r.rider_id
-         left join public.returns ret on ret.rental_id = r.id
+         left join lateral (
+           select max(returned_at) as returned_at
+           from public.returns rt
+           where rt.rental_id = r.id
+         ) ret on true
          where regexp_replace(lower(coalesce(r.vehicle_number,'')),'[^a-z0-9]+','','g') =
                regexp_replace(lower(coalesce(s.vehicle_number,'')),'[^a-z0-9]+','','g')
-           and r.start_time <= s.swapped_at
-           and (ret.id is null or ret.returned_at > s.swapped_at)
+           and r.start_time <= coalesce(s.swapped_at, s.created_at)
+           and (ret.returned_at is null or ret.returned_at > coalesce(s.swapped_at, s.created_at))
          order by r.start_time desc
          limit 1
        ) rr on true
        where rr.rider_id = $1
-       order by s.swapped_at desc
+       order by coalesce(s.swapped_at, s.created_at) desc
        `,
       [riderId]
     );
@@ -4897,6 +5042,9 @@ app.delete("/api/drafts/:id", async (req, res) => {
 // Battery Swaps
 app.get("/api/battery-swaps", async (req, res) => {
   const employeeUid = req.query.employeeUid ? String(req.query.employeeUid).trim() : null;
+  const includeOrphans = ["1", "true", "yes"].includes(
+    String(req.query.includeOrphans || "").trim().toLowerCase()
+  );
 
   const where = [];
   const params = [];
@@ -4908,6 +5056,12 @@ app.get("/api/battery-swaps", async (req, res) => {
   if (employeeUid) {
     const param = push(employeeUid);
     where.push(`(s.employee_uid = ${param} or (s.employee_uid = 'system' and rr.rental_employee_uid = ${param}))`);
+  }
+
+  if (!includeOrphans) {
+    // Orphan swaps (no matching rider/rental) show as 'N/A' in employee dashboards.
+    // Default to hiding them; admins can still access full data via admin endpoints.
+    where.push(`rr.rider_id is not null`);
   }
 
   const whereSql = where.length ? `where ${where.join(" and ")}` : "";
@@ -4926,16 +5080,20 @@ app.get("/api/battery-swaps", async (req, res) => {
                 rd.mobile as rider_mobile
          from public.rentals r
          left join public.riders rd on rd.id = r.rider_id
-         left join public.returns ret on ret.rental_id = r.id
+         left join lateral (
+           select max(returned_at) as returned_at
+           from public.returns rt
+           where rt.rental_id = r.id
+         ) ret on true
          where regexp_replace(lower(coalesce(r.vehicle_number,'')),'[^a-z0-9]+','','g') =
                regexp_replace(lower(coalesce(s.vehicle_number,'')),'[^a-z0-9]+','','g')
-           and r.start_time <= s.swapped_at
-           and (ret.id is null or ret.returned_at > s.swapped_at)
+           and r.start_time <= coalesce(s.swapped_at, s.created_at)
+           and (ret.returned_at is null or ret.returned_at > coalesce(s.swapped_at, s.created_at))
          order by r.start_time desc
          limit 1
        ) rr on true
        ${whereSql}
-       order by s.swapped_at desc
+       order by coalesce(s.swapped_at, s.created_at) desc
        `,
       params
     );
@@ -5080,11 +5238,15 @@ app.post("/api/battery-swaps", async (req, res) => {
                   rd.mobile as rider_mobile
            from public.rentals r
            left join public.riders rd on rd.id = r.rider_id
-           left join public.returns ret on ret.rental_id = r.id
+           left join lateral (
+             select max(returned_at) as returned_at
+             from public.returns rt
+             where rt.rental_id = r.id
+           ) ret on true
            where regexp_replace(lower(coalesce(r.vehicle_number,'')),'[^a-z0-9]+','','g') =
                  regexp_replace(lower(coalesce(s.vehicle_number,'')),'[^a-z0-9]+','','g')
-             and r.start_time <= s.swapped_at
-             and (ret.id is null or ret.returned_at > s.swapped_at)
+             and r.start_time <= coalesce(s.swapped_at, s.created_at)
+             and (ret.returned_at is null or ret.returned_at > coalesce(s.swapped_at, s.created_at))
            order by r.start_time desc
            limit 1
          ) rr on true

@@ -360,7 +360,7 @@ export default function AdminUsers() {
                                 title="Edit"
                               >
                                 <Edit size={16} />
-                                Edit
+                                
                               </button>
                               <button
                                 type="button"
@@ -369,7 +369,7 @@ export default function AdminUsers() {
                                 title="Delete"
                               >
                                 <Trash2 size={16} />
-                                Delete
+                                
                               </button>
                             </div>
                           </td>

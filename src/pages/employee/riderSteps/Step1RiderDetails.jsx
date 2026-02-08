@@ -194,7 +194,13 @@ export default function Step1RiderDetails() {
 
       clearFieldError("aadhaar");
       setAadhaarStatus("verified");
-      setAadhaarMessage("Aadhaar verified successfully via DigiLocker.");
+      if (docId) {
+        setAadhaarMessage("Aadhaar verified successfully via DigiLocker.");
+      } else {
+        setAadhaarMessage(
+          "Aadhaar verified via DigiLocker, but the document is not available to download."
+        );
+      }
       showBanner("success", "Aadhaar verified via DigiLocker.");
     };
 

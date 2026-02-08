@@ -290,6 +290,7 @@ function RetainRiderInner() {
     const dob = dobRaw ? String(dobRaw).slice(0, 10) : "";
 
     const riderMeta = parseMaybeJson(r?.meta) || {};
+    const riderCode = String(r?.rider_code || riderMeta?.rider_code || riderMeta?.riderCode || "").trim();
     const permanentAddress = r?.permanent_address || r?.permanentAddress || "";
     const temporaryAddress = r?.temporary_address || r?.temporaryAddress || "";
     const reference = r?.reference || "";
@@ -309,10 +310,26 @@ function RetainRiderInner() {
       permanentAddress,
       temporaryAddress,
       operationalZone: inferredZone,
+      riderCode,
       aadhaarVerified: Boolean(aadhaar),
       isRetainRider: true,
       existingRiderId: r?.id || null,
       activeRentalId: null,
+    });
+
+    setSelectedRiderSnapshot({
+      name,
+      phone,
+      aadhaar,
+      gender,
+      dob,
+      reference,
+      permanentAddress,
+      temporaryAddress,
+      operationalZone: inferredZone,
+      rider_code: riderCode,
+      riderCode,
+      existingRiderId: r?.id || null,
     });
     setResults([]);
     setError("");
@@ -553,7 +570,65 @@ function RetainRiderInner() {
   const [registration, setRegistration] = useState(null);
   const [sendingWhatsApp, setSendingWhatsApp] = useState(false);
   const [whatsAppStatus, setWhatsAppStatus] = useState("");
+  const [whatsAppStatusType, setWhatsAppStatusType] = useState("");
   const [whatsAppFallback, setWhatsAppFallback] = useState(null);
+
+  const [selectedRiderSnapshot, setSelectedRiderSnapshot] = useState(null);
+
+  const blobToDataUrl = (blob) =>
+    new Promise((resolve, reject) => {
+      try {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("Unable to read file"));
+        reader.readAsDataURL(blob);
+      } catch (e) {
+        reject(e);
+      }
+    });
+
+  const fetchUrlAsDataUrl = async (url) => {
+    const res = await fetch(url, { method: "GET" });
+    if (!res.ok) throw new Error(`Unable to fetch file (HTTP ${res.status})`);
+    const blob = await res.blob();
+    return blobToDataUrl(blob);
+  };
+
+  const hydrateReceiptPayloadForRetain = async ({ riderId, basePayload }) => {
+    const next = { ...(basePayload || {}) };
+
+    // Ensure we have the rider unique code for the PDF header.
+    // Prefer whatever we already know from selection/search.
+    if (!next.riderCode) {
+      const candidate =
+        String(selectedRiderSnapshot?.rider_code || selectedRiderSnapshot?.riderCode || "").trim() ||
+        String(formData?.riderCode || "").trim();
+      if (candidate) next.riderCode = candidate;
+    }
+
+    // If signature is missing, pull the latest stored signature for this rider.
+    if (!next.riderSignature || !String(next.riderSignature).startsWith("data:image/")) {
+      try {
+        if (riderId) {
+          const docs = await apiFetch(`/api/riders/${encodeURIComponent(riderId)}/documents`);
+          const rows = Array.isArray(docs) ? docs : [];
+          const signatureDoc = rows.find((d) => String(d?.kind || "").toLowerCase() === "rider_signature" && d?.url);
+          if (signatureDoc?.url) {
+            const dataUrl = await fetchUrlAsDataUrl(String(signatureDoc.url));
+            if (dataUrl && String(dataUrl).startsWith("data:image/")) {
+              next.riderSignature = dataUrl;
+              if (!next.agreementAccepted) next.agreementAccepted = true;
+              if (!next.agreementDate && signatureDoc.created_at) next.agreementDate = signatureDoc.created_at;
+            }
+          }
+        }
+      } catch {
+        // Ignore hydration failures; allow receipt download without signature.
+      }
+    }
+
+    return next;
+  };
 
   const buildReceiptPayload = (snapshot) => ({
     fullName: snapshot?.fullName || snapshot?.name || "",
@@ -589,11 +664,23 @@ function RetainRiderInner() {
 
   const handleDownloadReceipt = async () => {
     setWhatsAppStatus("");
+    setWhatsAppStatusType("");
     setWhatsAppFallback(null);
     try {
-      const snapshot = formData;
-      await downloadRiderReceiptPdf({ formData: buildReceiptPayload(snapshot), registration });
+      const snapshot = { ...(selectedRiderSnapshot || {}), ...(formData || {}) };
+      const base = buildReceiptPayload(snapshot);
+      const hydrated = await hydrateReceiptPayloadForRetain({
+        riderId: snapshot?.existingRiderId || formData?.existingRiderId,
+        basePayload: base,
+      });
+
+      const reg = {
+        ...(registration || {}),
+        riderCode: String(hydrated?.riderCode || registration?.riderCode || "").trim() || undefined,
+      };
+      await downloadRiderReceiptPdf({ formData: hydrated, registration: reg });
     } catch (e) {
+      setWhatsAppStatusType("error");
       setWhatsAppStatus(
         e?.message ? `Unable to generate receipt: ${e.message}` : "Unable to generate receipt."
       );
@@ -602,10 +689,12 @@ function RetainRiderInner() {
 
   const handleSendWhatsApp = async () => {
     setWhatsAppStatus("");
+    setWhatsAppStatusType("");
     setWhatsAppFallback(null);
     const snapshot = formData;
     const phoneDigits = String(snapshot?.phone || "").replace(/\D/g, "").slice(0, 10);
     if (phoneDigits.length !== 10) {
+      setWhatsAppStatusType("error");
       setWhatsAppStatus("Valid 10-digit mobile number is required.");
       return;
     }
@@ -621,15 +710,23 @@ function RetainRiderInner() {
         },
       });
       if (res?.sent) {
-        setWhatsAppStatus("Receipt sent successfully.");
+        setWhatsAppStatusType("success");
+        setWhatsAppStatus("Receipt sent to rider successfully.");
       } else if (res?.mediaUrl) {
         setWhatsAppFallback({ phoneDigits, mediaUrl: res.mediaUrl });
-        setWhatsAppStatus(String(res?.reason || res?.error || "Unable to send via WhatsApp Cloud API."));
+        setWhatsAppStatusType("error");
+        setWhatsAppStatus(
+          String(res?.reason || res?.error || "Failed to send receipt on WhatsApp.")
+        );
       } else {
-        setWhatsAppStatus(String(res?.reason || res?.error || "Unable to send receipt on WhatsApp."));
+        setWhatsAppStatusType("error");
+        setWhatsAppStatus(
+          String(res?.reason || res?.error || "Failed to send receipt on WhatsApp.")
+        );
       }
     } catch (e) {
-      setWhatsAppStatus(String(e?.message || e || "Unable to send on WhatsApp"));
+      setWhatsAppStatusType("error");
+      setWhatsAppStatus(String(e?.message || e || "Failed to send receipt on WhatsApp."));
     } finally {
       setSendingWhatsApp(false);
     }
@@ -1271,6 +1368,18 @@ function RetainRiderInner() {
                         Download Receipt
                       </button>
                     </div>
+
+                    {whatsAppStatus ? (
+                      <div
+                        className={`mt-3 rounded-xl border px-4 py-3 text-sm ${
+                          whatsAppStatusType === "success"
+                            ? "border-green-200 bg-green-50 text-green-700"
+                            : "border-red-200 bg-red-50 text-red-700"
+                        }`}
+                      >
+                        {whatsAppStatus}
+                      </div>
+                    ) : null}
                   </div>
                 )}
               </div>
