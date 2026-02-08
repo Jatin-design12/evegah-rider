@@ -200,6 +200,15 @@ export default function Step5Payment() {
           ? structuredClone(formData)
           : JSON.parse(JSON.stringify(formData));
 
+      const iciciMerchantTranId =
+        iciciEnabled && String(formData.paymentMode || "").toLowerCase() !== "cash"
+          ? (iciciQrData?.merchantTranId || iciciQrData?.merchant_tran_id || null)
+          : null;
+      const iciciPaymentTransactionId =
+        iciciEnabled && String(formData.paymentMode || "").toLowerCase() !== "cash"
+          ? (iciciQrData?.paymentTransactionId || iciciQrData?.payment_transaction_id || null)
+          : null;
+
       const startIso = new Date(formData.rentalStart).toISOString();
       const endIso = formData.rentalEnd ? new Date(formData.rentalEnd).toISOString() : null;
 
@@ -246,6 +255,8 @@ export default function Step5Payment() {
               issued_by_name: formData.issuedByName || null,
               employee_uid: user?.uid || null,
               employee_email: user?.email || null,
+              ...(iciciMerchantTranId ? { iciciMerchantTranId, merchantTranId: iciciMerchantTranId } : {}),
+              ...(iciciPaymentTransactionId ? { paymentTransactionId: iciciPaymentTransactionId } : {}),
               paymentBreakdown: {
                 cash: cashAmount,
                 online: onlineAmount,

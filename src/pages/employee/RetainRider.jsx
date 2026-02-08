@@ -508,8 +508,24 @@ function RetainRiderInner() {
       const startIso = new Date(formData.rentalStart).toISOString();
       const endIso = formData.rentalEnd ? new Date(formData.rentalEnd).toISOString() : null;
 
+      const iciciMerchantTranId = String(
+        formData?.iciciMerchantTranId ||
+        formData?.merchantTranId ||
+        formData?.paymentDetails?.iciciMerchantTranId ||
+        formData?.paymentDetails?.merchantTranId ||
+        ""
+      ).trim() || null;
+
+      const paymentTransactionId = String(
+        formData?.paymentTransactionId ||
+        formData?.paymentDetails?.paymentTransactionId ||
+        ""
+      ).trim() || null;
+
+      let savedRental = null;
+
       if (isUpdatingActiveRental && !creatingNewBooking) {
-        await apiFetch(`/api/rentals/${encodeURIComponent(formData.activeRentalId)}`, {
+        savedRental = await apiFetch(`/api/rentals/${encodeURIComponent(formData.activeRentalId)}`, {
           method: "PATCH",
           body: {
             rental_package: formData.rentalPackage || null,
@@ -521,11 +537,13 @@ function RetainRiderInner() {
             expected_end_time: endIso,
             meta: {
               issued_by_name: formData.issuedByName || null,
+              ...(iciciMerchantTranId ? { iciciMerchantTranId, merchantTranId: iciciMerchantTranId } : {}),
+              ...(paymentTransactionId ? { paymentTransactionId } : {}),
             },
           },
         });
       } else {
-        await apiFetch("/api/rentals", {
+        savedRental = await apiFetch("/api/rentals", {
           method: "POST",
           body: {
             rider_id: formData.existingRiderId,
@@ -547,6 +565,8 @@ function RetainRiderInner() {
               issued_by_name: formData.issuedByName || null,
               employee_uid: user?.uid || null,
               employee_email: user?.email || null,
+              ...(iciciMerchantTranId ? { iciciMerchantTranId, merchantTranId: iciciMerchantTranId } : {}),
+              ...(paymentTransactionId ? { paymentTransactionId } : {}),
             },
             documents: {
               preRidePhotos: Array.isArray(formData.preRidePhotos) ? formData.preRidePhotos : [],
@@ -557,7 +577,12 @@ function RetainRiderInner() {
 
       alert(isUpdatingActiveRental ? "Rental updated" : "Payment recorded");
       setCompleted(true);
-      setRegistration({ id: formData.existingRiderId }); // minimal registration for receipt
+      setRegistration({
+        id: formData.existingRiderId,
+        rentalId: savedRental?.id || formData.activeRentalId || null,
+        ...(iciciMerchantTranId ? { merchantTranId: iciciMerchantTranId, iciciMerchantTranId } : {}),
+        ...(paymentTransactionId ? { paymentTransactionId } : {}),
+      });
       setRetainSuccess(true);
     } catch (e) {
       setPaymentError(String(e?.message || e || "Unable to save payment"));
@@ -659,6 +684,22 @@ function RetainRiderInner() {
     securityDeposit: snapshot?.securityDeposit ?? null,
     totalAmount: snapshot?.totalAmount ?? null,
     amountPaid: snapshot?.amountPaid ?? snapshot?.paidAmount ?? snapshot?.totalAmount ?? null,
+    merchantTranId:
+      snapshot?.merchantTranId ||
+      snapshot?.iciciMerchantTranId ||
+      snapshot?.paymentDetails?.merchantTranId ||
+      snapshot?.paymentDetails?.iciciMerchantTranId ||
+      null,
+    iciciMerchantTranId:
+      snapshot?.iciciMerchantTranId ||
+      snapshot?.merchantTranId ||
+      snapshot?.paymentDetails?.iciciMerchantTranId ||
+      snapshot?.paymentDetails?.merchantTranId ||
+      null,
+    paymentTransactionId:
+      snapshot?.paymentTransactionId ||
+      snapshot?.paymentDetails?.paymentTransactionId ||
+      null,
     riderSignature: typeof snapshot?.riderSignature === "string" ? snapshot.riderSignature : null,
   });
 
@@ -691,7 +732,7 @@ function RetainRiderInner() {
     setWhatsAppStatus("");
     setWhatsAppStatusType("");
     setWhatsAppFallback(null);
-    const snapshot = formData;
+    const snapshot = { ...(selectedRiderSnapshot || {}), ...(formData || {}) };
     const phoneDigits = String(snapshot?.phone || "").replace(/\D/g, "").slice(0, 10);
     if (phoneDigits.length !== 10) {
       setWhatsAppStatusType("error");

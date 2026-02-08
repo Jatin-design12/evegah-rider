@@ -636,8 +636,32 @@ function createReceiptPdfBuffer({ formData, registration }) {
         ["Zone", formData?.zone || formData?.operationalZone || "-"],
       ]);
 
-      const paidAmount =
-        formData?.paidAmount ?? formData?.securityDepositAmount ?? formData?.amountPaid ?? "";
+      const parseMoney = (value) => {
+        if (value === undefined || value === null) return null;
+        const s = String(value).trim();
+        if (!s) return null;
+        const cleaned = s.replace(/[^0-9.\-]+/g, "");
+        if (!cleaned) return null;
+        const n = Number(cleaned);
+        if (!Number.isFinite(n)) return null;
+        return Number(n.toFixed(2));
+      };
+
+      const formatMoney = (value) => {
+        const n = parseMoney(value);
+        if (n === null) return "";
+        return Number.isInteger(n) ? String(n) : n.toFixed(2);
+      };
+
+      const paidAmountRaw =
+        formData?.amountPaid ??
+        formData?.paidAmount ??
+        formData?.paymentDetails?.totalAmount ??
+        formData?.totalAmount ??
+        formData?.amount ??
+        "";
+
+      const paidAmount = formatMoney(paidAmountRaw);
       drawSection("Payment Receipt", [
         ["Payment Mode", formData?.paymentMode || formData?.paymentMethod || "-"],
         ["Rental Amount", formData?.rentalAmount ?? "-"],
@@ -1641,12 +1665,124 @@ app.get("/api/availability", async (_req, res) => {
   }
 });
 
+function parseMoneyValue(value) {
+  if (value === undefined || value === null) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  const cleaned = s.replace(/[^0-9.\-]+/g, "");
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  if (!Number.isFinite(n)) return null;
+  return Number(n.toFixed(2));
+}
+
+function formatMoneyCompact(value) {
+  const n = parseMoneyValue(value);
+  if (n === null) return "";
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+
+function firstPositiveMoneyValue(values) {
+  for (const v of values) {
+    const n = parseMoneyValue(v);
+    if (n !== null && n > 0) return n;
+  }
+  return null;
+}
+
+function firstAnyMoneyValue(values) {
+  for (const v of values) {
+    const n = parseMoneyValue(v);
+    if (n !== null) return n;
+  }
+  return null;
+}
+
+async function resolveReceiptAmountPaid({ formData, registration }) {
+  const merchantTranId =
+    String(
+      formData?.merchantTranId ||
+      formData?.iciciMerchantTranId ||
+      formData?.paymentDetails?.merchantTranId ||
+      formData?.paymentDetails?.iciciMerchantTranId ||
+      registration?.merchantTranId ||
+      registration?.iciciMerchantTranId ||
+      ""
+    ).trim();
+
+  const rentalId = String(registration?.rentalId || registration?.rental_id || formData?.rentalId || "").trim();
+
+  // 1) Prefer DB source-of-truth when possible
+  try {
+    if (merchantTranId) {
+      const { rows } = await pool.query(
+        `select amount, status
+         from public.payment_transactions
+         where merchant_tran_id = $1
+         limit 1`,
+        [merchantTranId]
+      );
+      const amount = rows?.[0]?.amount;
+      const parsed = parseMoneyValue(amount);
+      if (parsed !== null && parsed > 0) return parsed;
+      // If amount is present but 0 (unlikely), keep looking at formData fallbacks.
+    }
+
+    if (rentalId) {
+      const { rows } = await pool.query(
+        `select amount, status
+         from public.payment_transactions
+         where rental_id = $1
+         order by (status = 'SUCCESS')::int desc, created_at desc
+         limit 1`,
+        [rentalId]
+      );
+      const amount = rows?.[0]?.amount;
+      const parsed = parseMoneyValue(amount);
+      if (parsed !== null && parsed > 0) return parsed;
+    }
+  } catch (e) {
+    // Non-fatal; we can still derive from the request payload.
+    console.warn("resolveReceiptAmountPaid: DB lookup failed", String(e?.message || e));
+  }
+
+  // 2) Fallback: derive from payload (ignore blanks; prefer positive over zero)
+  const derivedTotal = (() => {
+    const rental = parseMoneyValue(formData?.rentalAmount);
+    const deposit = parseMoneyValue(formData?.securityDeposit);
+    if (rental !== null && deposit !== null) return Number((rental + deposit).toFixed(2));
+    return null;
+  })();
+
+  const candidates = [
+    formData?.amountPaid,
+    formData?.paidAmount,
+    formData?.paymentDetails?.totalAmount,
+    formData?.totalAmount,
+    formData?.amount,
+    derivedTotal,
+  ];
+
+  return firstPositiveMoneyValue(candidates) ?? firstAnyMoneyValue(candidates);
+}
+
 app.post("/api/receipts/rider/pdf", async (req, res) => {
   try {
     const { formData, registration } = req.body || {};
     if (!formData) return res.status(400).json({ error: "Missing formData" });
 
-    const buffer = await createReceiptPdfBuffer({ formData, registration });
+    const resolvedAmount = await resolveReceiptAmountPaid({ formData, registration });
+    const formDataForReceipt = resolvedAmount === null
+      ? formData
+      : {
+        ...formData,
+        amountPaid: resolvedAmount,
+        paidAmount: resolvedAmount,
+        // Keep totalAmount if it exists; otherwise, use resolved amount.
+        totalAmount: formData?.totalAmount ?? resolvedAmount,
+      };
+
+    const buffer = await createReceiptPdfBuffer({ formData: formDataForReceipt, registration });
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", "attachment; filename=EVegah_Receipt.pdf");
     return res.status(200).send(buffer);
@@ -1663,26 +1799,32 @@ app.post("/api/whatsapp/send-receipt", async (req, res) => {
     if (toDigitsValue.length !== 10) return res.status(400).json({ error: "Invalid mobile number" });
     if (!formData) return res.status(400).json({ error: "Missing formData" });
 
+    const resolvedAmount = await resolveReceiptAmountPaid({ formData, registration });
+    const resolvedAmountText = resolvedAmount === null ? "" : formatMoneyCompact(resolvedAmount);
+    const formDataForReceipt = resolvedAmount === null
+      ? formData
+      : {
+        ...formData,
+        amountPaid: resolvedAmount,
+        paidAmount: resolvedAmount,
+        totalAmount: formData?.totalAmount ?? resolvedAmount,
+      };
+
     const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || "").trim();
-    if (!publicBaseUrl) {
-      return res.status(200).json({
-        sent: false,
-        mediaUrl: null,
-        reason: "PUBLIC_BASE_URL is required to attach media on WhatsApp",
-        fallback: null,
-      });
-    }
+    const hasPublicBaseUrl = Boolean(publicBaseUrl);
 
     // In most deployments (PM2 + Nginx), the Node API is proxied under /api.
     // Default to /api/uploads so the receipt is reachable externally without
     // requiring a separate Nginx rule for /uploads.
     // Override via PUBLIC_UPLOADS_PREFIX (e.g. "/uploads" or "/api/uploads").
     const uploadsPrefix = String(process.env.PUBLIC_UPLOADS_PREFIX || "/api/uploads").trim() || "/api/uploads";
-    const publicUploadsPrefix = (() => {
-      const base = publicBaseUrl.replace(/\/+$/, "");
-      const prefix = uploadsPrefix.replace(/^\/+/, "").replace(/\/+$/, "");
-      return prefix ? `${base}/${prefix}` : base;
-    })();
+    const publicUploadsPrefix = hasPublicBaseUrl
+      ? (() => {
+        const base = publicBaseUrl.replace(/\/+$/, "");
+        const prefix = uploadsPrefix.replace(/^\/+/, "").replace(/\/+$/, "");
+        return prefix ? `${base}/${prefix}` : base;
+      })()
+      : "";
 
     const rawReceiptId = `${registration?.rentalId || registration?.riderId || Date.now()}`;
     const receiptId = (() => {
@@ -1700,7 +1842,7 @@ app.post("/api/whatsapp/send-receipt", async (req, res) => {
     // Always write a unique internal filename for storage/back-compat.
     const internalFileName = `receipt_${receiptId}.pdf`;
     const internalAbsPath = path.join(uploadsDir, internalFileName);
-    const pdfBuffer = await createReceiptPdfBuffer({ formData, registration });
+    const pdfBuffer = await createReceiptPdfBuffer({ formData: formDataForReceipt, registration });
     await fs.promises.writeFile(internalAbsPath, pdfBuffer);
 
     // Public filename (stable, easy to share):
@@ -1743,9 +1885,12 @@ app.post("/api/whatsapp/send-receipt", async (req, res) => {
       fs.promises.copyFile(internalAbsPath, altAbsPath).catch(() => null);
     }
 
-    const mediaUrl = `${publicUploadsPrefix}/${encodeURIComponent(fileName)}`;
+    const mediaUrl = publicUploadsPrefix
+      ? `${publicUploadsPrefix}/${encodeURIComponent(fileName)}`
+      : "";
 
     const mediaPath = (() => {
+      if (!mediaUrl) return "";
       try {
         const u = new URL(mediaUrl);
         return `${u.pathname}${u.search || ""}`;
@@ -1758,7 +1903,8 @@ app.post("/api/whatsapp/send-receipt", async (req, res) => {
 
     // Preflight: Meta must be able to fetch this URL from the public internet.
     // Without this, Meta may accept the send request but the user won't receive the document.
-    if (fetchApi) {
+    // Only applies when we are using link-based media delivery.
+    if (fetchApi && mediaUrl) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 6000);
       try {
@@ -1866,51 +2012,71 @@ app.post("/api/whatsapp/send-receipt", async (req, res) => {
       to: `91${toDigitsValue}`,
     };
 
-    if (templateName && templateHeaderType === "document") {
+    // Enforce direct attachment when a template is configured.
+    // If the template doesn't have a document header, we cannot attach a PDF in the template.
+    if (templateName && templateHeaderType !== "document") {
+      return res.status(200).json({
+        sent: false,
+        mediaUrl,
+        reason: "WhatsApp template is configured but WHATSAPP_TEMPLATE_HEADER_TYPE is not 'document'. Configure an approved template with a document header to send the PDF as a direct attachment.",
+        fallback: null,
+      });
+    }
+
+    const shouldUploadMedia = Boolean(
+      whatsappPhoneNumberId &&
+      whatsappAccessToken &&
+      fetchApi &&
+      typeof FormData !== "undefined" &&
+      typeof Blob !== "undefined"
+    );
+
+    if (shouldUploadMedia && (templateName ? templateHeaderType === "document" : true)) {
       try {
         if (!fetchApi) throw new Error("Node fetch API unavailable");
 
-        const hasFormData = typeof FormData !== "undefined";
-        const hasBlob = typeof Blob !== "undefined";
+        const mediaUploadUrl = `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(
+          whatsappPhoneNumberId
+        )}/media`;
 
-        if (!hasFormData || !hasBlob) {
+        const form = new FormData();
+        form.append("messaging_product", "whatsapp");
+        form.append("type", "application/pdf");
+        form.append("file", new Blob([pdfBuffer], { type: "application/pdf" }), fileName);
+
+        const uploadRes = await fetchApi(mediaUploadUrl, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${whatsappAccessToken}`,
+          },
+          body: form,
+        });
+        const uploadBody = await uploadRes.json().catch(() => null);
+
+        if (uploadRes.ok && uploadBody?.id) {
+          templateHeaderMediaId = String(uploadBody.id);
+          templateHeaderMediaUpload = { ok: true, id: templateHeaderMediaId };
+        } else {
           templateHeaderMediaUpload = {
             ok: false,
-            reason: "FormData/Blob unavailable; cannot upload template header media",
+            status: uploadRes.status,
+            detail: uploadBody,
           };
-        } else {
-          const mediaUploadUrl = `https://graph.facebook.com/${graphVersion}/${encodeURIComponent(
-            whatsappPhoneNumberId
-          )}/media`;
-
-          const form = new FormData();
-          form.append("messaging_product", "whatsapp");
-          form.append("type", "application/pdf");
-          form.append("file", new Blob([pdfBuffer], { type: "application/pdf" }), fileName);
-
-          const uploadRes = await fetchApi(mediaUploadUrl, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${whatsappAccessToken}`,
-            },
-            body: form,
-          });
-          const uploadBody = await uploadRes.json().catch(() => null);
-
-          if (uploadRes.ok && uploadBody?.id) {
-            templateHeaderMediaId = String(uploadBody.id);
-            templateHeaderMediaUpload = { ok: true, id: templateHeaderMediaId };
-          } else {
-            templateHeaderMediaUpload = {
-              ok: false,
-              status: uploadRes.status,
-              detail: uploadBody,
-            };
-          }
         }
       } catch (e) {
         templateHeaderMediaUpload = { ok: false, reason: String(e?.message || e || "Upload failed") };
       }
+    }
+
+    // If template is configured, require media upload to succeed so the rider gets a direct attachment.
+    if (templateName && templateHeaderType === "document" && !templateHeaderMediaId) {
+      return res.status(200).json({
+        sent: false,
+        mediaUrl,
+        reason: "Failed to upload receipt PDF to WhatsApp media. Cannot send direct attachment via template header.",
+        fallback: null,
+        templateHeaderMediaUpload,
+      });
     }
 
     // WhatsApp Cloud API: business-initiated messages generally require a template.
@@ -1970,12 +2136,15 @@ app.post("/api/whatsapp/send-receipt", async (req, res) => {
 
             // Try to derive amount if present
             const amount =
-              formData?.amountPaid ??
-              formData?.paidAmount ??
-              formData?.paymentDetails?.totalAmount ??
-              formData?.totalAmount ??
-              formData?.amount ??
-              "";
+              resolvedAmountText ||
+              formatMoneyCompact(
+                formData?.amountPaid ??
+                formData?.paidAmount ??
+                formData?.paymentDetails?.totalAmount ??
+                formData?.totalAmount ??
+                formData?.amount ??
+                ""
+              );
 
             const paymentMode =
               formData?.paymentMode ??
@@ -2144,11 +2313,21 @@ app.post("/api/whatsapp/send-receipt", async (req, res) => {
         ...basePayload,
         type: "document",
         document: {
-          link: mediaUrl,
+          ...(templateHeaderMediaId ? { id: templateHeaderMediaId } : { link: mediaUrl }),
           filename: fileName,
           caption: messageBody,
         },
       };
+
+    if (payload?.type === "document" && !templateHeaderMediaId && !mediaUrl) {
+      return res.status(200).json({
+        sent: false,
+        mediaUrl: null,
+        reason: "Cannot attach receipt: WhatsApp media upload failed and PUBLIC_BASE_URL is not configured for link-based delivery.",
+        fallback: null,
+        templateHeaderMediaUpload,
+      });
+    }
 
     // If we ended up with template.components === undefined, remove it entirely (Meta is picky).
     if (payload?.type === "template" && payload?.template && payload.template.components === undefined) {
