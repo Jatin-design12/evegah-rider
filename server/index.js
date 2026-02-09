@@ -9,6 +9,7 @@ import { fileURLToPath } from "url";
 import fs from "fs";
 import crypto from "crypto";
 import dns from "dns";
+import https from "https";
 import admin from "firebase-admin";
 import multer from "multer";
 import PDFDocument from "pdfkit";
@@ -158,6 +159,102 @@ async function fetchWithRetry(url, options, { timeoutMs = 15000, retries = 1 } =
     }
   }
   throw lastError || new Error("fetch failed");
+}
+
+async function httpsRequestOnce({ url, method, headers, body, timeoutMs, ipOverride }) {
+  const u = new URL(url);
+  if (u.protocol !== "https:") {
+    throw new Error(`Only https: supported for ipOverride (${u.protocol})`);
+  }
+
+  const hostname = u.hostname;
+  const port = u.port ? Number(u.port) : 443;
+  const pathWithQuery = `${u.pathname}${u.search || ""}`;
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      {
+        protocol: "https:",
+        host: ipOverride || hostname,
+        port,
+        method,
+        path: pathWithQuery,
+        headers: {
+          // Preserve the original host header for virtual hosting.
+          Host: hostname,
+          ...headers,
+        },
+        // Ensure SNI uses the DigiLocker hostname even if we connect to a raw IP.
+        servername: hostname,
+      },
+      (res) => {
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => {
+          const text = Buffer.concat(chunks).toString("utf8");
+          resolve({
+            ok: res.statusCode >= 200 && res.statusCode < 300,
+            status: res.statusCode || 0,
+            headers: res.headers || {},
+            text,
+          });
+        });
+      }
+    );
+
+    const effectiveTimeoutMs = Math.max(1000, Number(timeoutMs) || 15000);
+    req.setTimeout(effectiveTimeoutMs, () => {
+      req.destroy(new Error(`timeout after ${effectiveTimeoutMs}ms`));
+    });
+    req.on("error", reject);
+
+    if (body !== undefined && body !== null) req.write(body);
+    req.end();
+  });
+}
+
+async function tryHttpsAcrossResolvedIps({ url, method, headers, body, timeoutMs }) {
+  const u = new URL(url);
+  const hostname = u.hostname;
+  // Only do this for DigiLocker hostnames; avoid surprising behavior elsewhere.
+  const allow = hostname === "api.digitallocker.gov.in" || hostname.endsWith(".digitallocker.gov.in");
+  if (!allow) throw new Error("tryHttpsAcrossResolvedIps called for non-DigiLocker host");
+
+  let ips = [];
+  try {
+    // resolve4 is best here because the observed issue is on a specific IPv4.
+    ips = await dns.promises.resolve4(hostname);
+  } catch (e) {
+    const err = new Error(`DNS resolve4 failed for ${hostname}: ${String(e?.message || e)}`);
+    err.cause = e;
+    throw err;
+  }
+
+  if (!Array.isArray(ips) || ips.length === 0) {
+    throw new Error(`No A records for ${hostname}`);
+  }
+
+  // Deterministic-ish shuffle so we don't always hit the same bad IP first.
+  const rotated = (() => {
+    const start = Math.floor(Date.now() / 1000) % ips.length;
+    return [...ips.slice(start), ...ips.slice(0, start)];
+  })();
+
+  let lastErr = null;
+  for (const ip of rotated) {
+    try {
+      const res = await httpsRequestOnce({ url, method, headers, body, timeoutMs, ipOverride: ip });
+      // If we got an HTTP response at all, return it even if it's 4xx.
+      return { ...res, ip };
+    } catch (e) {
+      lastErr = e;
+      // Only skip to next IP for retryable network errors; otherwise fail fast.
+      if (!isRetryableNetworkError(e)) break;
+    }
+  }
+  const err = new Error(`All DigiLocker IPs failed: ${String(lastErr?.message || lastErr || "fetch failed")}`);
+  err.cause = lastErr;
+  throw err;
 }
 
 function looksLikeBase64(text) {
@@ -1283,18 +1380,65 @@ async function postFormUrlEncoded(url, { headers = {}, bodyObj = {} } = {}) {
 
   const timeoutMs = Number(process.env.DIGILOCKER_HTTP_TIMEOUT_MS || process.env.HTTP_TIMEOUT_MS || 15000);
   const retries = Number(process.env.DIGILOCKER_HTTP_RETRIES || 1);
-  const res = await fetchWithRetry(
-    url,
-    {
+  let res;
+  try {
+    res = await fetchWithRetry(
+      url,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          ...headers,
+        },
+        body,
+      },
+      { timeoutMs, retries }
+    );
+  } catch (e) {
+    // Production observed: one DigiLocker resolved IP resets TLS handshake (connection reset by peer).
+    // Fallback: resolve all A records and try each IP with SNI set to the hostname.
+    const host = (() => {
+      try {
+        return new URL(url).hostname;
+      } catch {
+        return "";
+      }
+    })();
+    const isDigiLocker = host === "api.digitallocker.gov.in" || host.endsWith(".digitallocker.gov.in");
+    if (!isDigiLocker || !isRetryableNetworkError(e)) throw e;
+
+    const fallback = await tryHttpsAcrossResolvedIps({
+      url,
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
         ...headers,
       },
-      body,
-    },
-    { timeoutMs, retries }
-  );
+      body: body.toString(),
+      timeoutMs,
+    });
+
+    const text = fallback.text;
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = text;
+    }
+    if (!(fallback.status >= 200 && fallback.status < 300)) {
+      const message =
+        (data && typeof data === "object" && (data.error_description || data.error))
+          ? String(data.error_description || data.error)
+          : typeof data === "string"
+            ? data
+            : `Request failed (${fallback.status})`;
+      const err = new Error(`${message} (ip=${fallback.ip})`);
+      err.status = fallback.status;
+      err.data = data;
+      throw err;
+    }
+    return data;
+  }
 
   const text = await res.text();
   let data = null;
@@ -1321,15 +1465,55 @@ async function postFormUrlEncoded(url, { headers = {}, bodyObj = {} } = {}) {
 async function fetchJson(url, { method = "GET", headers = {}, body } = {}) {
   const timeoutMs = Number(process.env.DIGILOCKER_HTTP_TIMEOUT_MS || process.env.HTTP_TIMEOUT_MS || 15000);
   const retries = Number(process.env.DIGILOCKER_HTTP_RETRIES || 1);
-  const res = await fetchWithRetry(
-    url,
-    {
+  let res;
+  try {
+    res = await fetchWithRetry(
+      url,
+      {
+        method,
+        headers,
+        body,
+      },
+      { timeoutMs, retries }
+    );
+  } catch (e) {
+    const host = (() => {
+      try {
+        return new URL(url).hostname;
+      } catch {
+        return "";
+      }
+    })();
+    const isDigiLocker = host === "api.digitallocker.gov.in" || host.endsWith(".digitallocker.gov.in");
+    if (!isDigiLocker || !isRetryableNetworkError(e)) throw e;
+
+    const fallback = await tryHttpsAcrossResolvedIps({
+      url,
       method,
       headers,
-      body,
-    },
-    { timeoutMs, retries }
-  );
+      body: body ?? undefined,
+      timeoutMs,
+    });
+
+    const text = fallback.text;
+    let data = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = text;
+    }
+    if (!(fallback.status >= 200 && fallback.status < 300)) {
+      const message =
+        (data && typeof data === "object" && data.error) ? String(data.error) :
+          (typeof data === "string" && data) ? data :
+            `Request failed (${fallback.status})`;
+      const err = new Error(`${message} (ip=${fallback.ip})`);
+      err.status = fallback.status;
+      err.data = data;
+      throw err;
+    }
+    return data;
+  }
 
   const text = await res.text();
   let data = null;
@@ -1595,8 +1779,10 @@ app.get("/api/digilocker/callback", async (req, res) => {
     const wrapStepError = (step, err, { url } = {}) => {
       const status = err?.status ? ` (${err.status})` : "";
       const base = String(err?.message || err || "Unknown error");
+      const causeDetail = describeFetchCause(err) || describeFetchCause(err?.cause) || "";
       const target = url ? ` (${String(url)})` : "";
-      const e2 = new Error(`${step}${status}: ${base}${target}`);
+      const detailSuffix = causeDetail ? ` [${causeDetail}]` : "";
+      const e2 = new Error(`${step}${status}: ${base}${target}${detailSuffix}`);
       if (err?.status) e2.status = err.status;
       if (err?.data !== undefined) e2.data = err.data;
       e2.step = step;
