@@ -8,6 +8,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import fs from "fs";
 import crypto from "crypto";
+import dns from "dns";
 import admin from "firebase-admin";
 import multer from "multer";
 import PDFDocument from "pdfkit";
@@ -26,6 +27,16 @@ const __dirname = path.dirname(__filename);
 // Allow local overrides in server/.env.local (not committed) for dev.
 dotenv.config({ path: path.join(__dirname, ".env"), override: true });
 dotenv.config({ path: path.join(__dirname, ".env.local"), override: true });
+
+// Prefer IPv4 first to avoid environments where IPv6 routes/DNS cause intermittent fetch failures.
+// Safe no-op on older Node versions.
+try {
+  if (typeof dns.setDefaultResultOrder === "function") {
+    dns.setDefaultResultOrder(String(process.env.DNS_RESULT_ORDER || "ipv4first"));
+  }
+} catch {
+  // ignore
+}
 
 const app = express();
 app.use(
@@ -75,6 +86,78 @@ function tryParseJson(text) {
   } catch {
     return null;
   }
+}
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function describeFetchCause(err) {
+  const cause = err?.cause;
+  if (!cause) return "";
+  const parts = [];
+  if (cause.code) parts.push(`code=${cause.code}`);
+  if (cause.errno) parts.push(`errno=${cause.errno}`);
+  if (cause.syscall) parts.push(`syscall=${cause.syscall}`);
+  if (cause.address) parts.push(`address=${cause.address}`);
+  if (cause.port) parts.push(`port=${cause.port}`);
+  const msg = String(cause.message || "").trim();
+  if (msg && !parts.includes(msg)) parts.push(`causeMessage=${msg}`);
+  return parts.length ? parts.join(" ") : "";
+}
+
+function isRetryableNetworkError(err) {
+  const msg = String(err?.message || "").toLowerCase();
+  const causeCode = String(err?.cause?.code || "").toUpperCase();
+  if (msg.includes("timeout") || msg.includes("fetch failed")) return true;
+  return new Set([
+    "ECONNRESET",
+    "ETIMEDOUT",
+    "ESOCKETTIMEDOUT",
+    "EAI_AGAIN",
+    "ENOTFOUND",
+    "ECONNREFUSED",
+    "UND_ERR_CONNECT_TIMEOUT",
+    "UND_ERR_SOCKET",
+    "UND_ERR_HEADERS_TIMEOUT",
+    "UND_ERR_BODY_TIMEOUT",
+  ]).has(causeCode);
+}
+
+async function fetchWithRetry(url, options, { timeoutMs = 15000, retries = 1 } = {}) {
+  if (!fetchApi) {
+    const err = new Error("Node fetch API unavailable");
+    err.status = 503;
+    throw err;
+  }
+
+  let lastError = null;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+    const timeout = controller
+      ? setTimeout(() => controller.abort(), Math.max(1000, Number(timeoutMs) || 15000))
+      : null;
+
+    try {
+      const res = await fetchApi(url, {
+        ...options,
+        ...(controller ? { signal: controller.signal } : {}),
+      });
+      return res;
+    } catch (e) {
+      lastError = e;
+      const detail = describeFetchCause(e);
+      const augmented = new Error(detail ? `${String(e?.message || e)} (${detail})` : String(e?.message || e));
+      augmented.cause = e;
+      // Retry only for transient network errors.
+      if (attempt < retries && isRetryableNetworkError(e)) {
+        await sleep(400 * (attempt + 1));
+        continue;
+      }
+      throw augmented;
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  }
+  throw lastError || new Error("fetch failed");
 }
 
 function looksLikeBase64(text) {
@@ -1192,26 +1275,26 @@ function createPkceCodeChallengeS256(codeVerifier) {
 }
 
 async function postFormUrlEncoded(url, { headers = {}, bodyObj = {} } = {}) {
-  if (!fetchApi) {
-    const err = new Error("Node fetch API unavailable");
-    err.status = 503;
-    throw err;
-  }
-
   const body = new URLSearchParams();
   for (const [k, v] of Object.entries(bodyObj)) {
     if (v === undefined || v === null) continue;
     body.set(k, String(v));
   }
 
-  const res = await fetchApi(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      ...headers,
+  const timeoutMs = Number(process.env.DIGILOCKER_HTTP_TIMEOUT_MS || process.env.HTTP_TIMEOUT_MS || 15000);
+  const retries = Number(process.env.DIGILOCKER_HTTP_RETRIES || 1);
+  const res = await fetchWithRetry(
+    url,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        ...headers,
+      },
+      body,
     },
-    body,
-  });
+    { timeoutMs, retries }
+  );
 
   const text = await res.text();
   let data = null;
@@ -1236,17 +1319,17 @@ async function postFormUrlEncoded(url, { headers = {}, bodyObj = {} } = {}) {
 }
 
 async function fetchJson(url, { method = "GET", headers = {}, body } = {}) {
-  if (!fetchApi) {
-    const err = new Error("Node fetch API unavailable");
-    err.status = 503;
-    throw err;
-  }
-
-  const res = await fetchApi(url, {
-    method,
-    headers,
-    body,
-  });
+  const timeoutMs = Number(process.env.DIGILOCKER_HTTP_TIMEOUT_MS || process.env.HTTP_TIMEOUT_MS || 15000);
+  const retries = Number(process.env.DIGILOCKER_HTTP_RETRIES || 1);
+  const res = await fetchWithRetry(
+    url,
+    {
+      method,
+      headers,
+      body,
+    },
+    { timeoutMs, retries }
+  );
 
   const text = await res.text();
   let data = null;
