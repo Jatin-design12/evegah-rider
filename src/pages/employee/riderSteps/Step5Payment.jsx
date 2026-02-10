@@ -27,7 +27,11 @@ export default function Step5Payment() {
   const configuredUpiId = import.meta.env.VITE_EVEGAH_UPI_ID || publicConfig.upiId;
   const defaultUpiId = "temp.evegah@okaxis";
   const payeeName = import.meta.env.VITE_EVEGAH_PAYEE_NAME || publicConfig.payeeName || "Evegah";
-  const iciciEnabled = import.meta.env.VITE_ICICI_ENABLED === "true";
+  const iciciEnabled =
+    String(import.meta.env.VITE_ICICI_ENABLED || "")
+      .trim()
+      .replace(/^"+|"+$/g, "")
+      .toLowerCase() === "true";
 
   const amount = Number(formData.totalAmount || 0);
   const cashAmount = Number(formData.cashAmount || 0);

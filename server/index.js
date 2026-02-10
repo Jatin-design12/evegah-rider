@@ -3245,7 +3245,10 @@ app.patch("/api/rentals/:id", async (req, res) => {
     const rentalMeta = rentalRow.meta && typeof rentalRow.meta === "object" ? rentalRow.meta : {};
     const newRentalMeta = body.meta && typeof body.meta === "object" ? body.meta : {};
     const merchantTranId = newRentalMeta.iciciMerchantTranId || newRentalMeta.merchantTranId || rentalMeta.iciciMerchantTranId || rentalMeta.merchantTranId || null;
-    const iciciEnabled = String(process.env.VITE_ICICI_ENABLED || "false").toLowerCase() === "true";
+    const iciciEnabled = String(process.env.VITE_ICICI_ENABLED || "false")
+      .trim()
+      .replace(/^"+|"+$/g, "")
+      .toLowerCase() === "true";
     const totalAmount = Number(body.total_amount ?? body.totalAmount ?? rentalRow.total_amount ?? 0);
 
     if (iciciEnabled && paymentMode !== "cash" && merchantTranId && totalAmount > 0) {
@@ -4370,7 +4373,10 @@ app.post("/api/registrations/new-rider", async (req, res) => {
   // Only allow registration if payment is verified or payment mode is cash
   const paymentMode = String(rental.payment_mode || rental.paymentMode || "").trim().toLowerCase();
   const merchantTranId = rentalMeta.iciciMerchantTranId || rentalMeta.merchantTranId || null;
-  const iciciEnabled = String(process.env.VITE_ICICI_ENABLED || "false").toLowerCase() === "true";
+  const iciciEnabled = String(process.env.VITE_ICICI_ENABLED || "false")
+    .trim()
+    .replace(/^"+|"+$/g, "")
+    .toLowerCase() === "true";
 
   if (iciciEnabled && paymentMode !== "cash" && merchantTranId) {
     try {
@@ -4905,7 +4911,10 @@ app.post("/api/returns/submit", upload.array("photos", 10), async (req, res) => 
     if (totalDueAmount > 0) {
       const returnMeta = req.body.meta && typeof req.body.meta === "object" ? req.body.meta : {};
       const merchantTranId = returnMeta.iciciMerchantTranId || returnMeta.merchantTranId || null;
-      const iciciEnabled = String(process.env.VITE_ICICI_ENABLED || "false").toLowerCase() === "true";
+      const iciciEnabled = String(process.env.VITE_ICICI_ENABLED || "false")
+        .trim()
+        .replace(/^"+|"+$/g, "")
+        .toLowerCase() === "true";
 
       if (iciciEnabled && merchantTranId) {
         try {
@@ -5597,7 +5606,10 @@ app.post("/api/battery-swaps", async (req, res) => {
   const swapAmount = Number(body.swap_amount || body.swapAmount || 0);
   const swapMeta = body.meta && typeof body.meta === "object" ? body.meta : {};
   const merchantTranId = swapMeta.iciciMerchantTranId || swapMeta.merchantTranId || null;
-  const iciciEnabled = String(process.env.VITE_ICICI_ENABLED || "false").toLowerCase() === "true";
+  const iciciEnabled = String(process.env.VITE_ICICI_ENABLED || "false")
+    .trim()
+    .replace(/^"+|"+$/g, "")
+    .toLowerCase() === "true";
 
   if (iciciEnabled && swapAmount > 0 && merchantTranId) {
     try {
