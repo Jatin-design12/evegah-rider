@@ -4,7 +4,12 @@ import { QRCodeCanvas } from "qrcode.react";
 import EmployeeLayout from "../../components/layouts/EmployeeLayout";
 import useAuth from "../../hooks/useAuth";
 import { BATTERY_ID_OPTIONS } from "../../utils/batteryIds";
-import { VEHICLE_ID_OPTIONS } from "../../utils/vehicleIds";
+import {
+  filterVehicleIdGroups,
+  flattenVehicleIdGroups,
+  getVehicleIdGroupsForModel,
+  VEHICLE_MODEL_OPTIONS,
+} from "../../utils/vehicleIds";
 import { apiFetch } from "../../config/api";
 import { RiderFormProvider } from "./RiderFormContext";
 import { useRiderForm } from "./useRiderForm";
@@ -40,15 +45,21 @@ function RetainRiderInner() {
   // State for completion message
   const [retainSuccess, setRetainSuccess] = useState(false);
 
+  const clampSplitValue = (value) => {
+    const next = Number(value);
+    if (Number.isNaN(next)) return 0;
+    return Math.max(0, next);
+  };
+
   // Handle split payment field changes
   const handleCashChange = (val) => {
-    const cash = Number(val) || 0;
     const total = Number(formData.totalAmount || 0);
+    const cash = Math.min(clampSplitValue(val), total);
     updateForm({ cashAmount: cash, onlineAmount: Math.max(0, total - cash) });
   };
   const handleOnlineChange = (val) => {
-    const online = Number(val) || 0;
     const total = Number(formData.totalAmount || 0);
+    const online = Math.min(clampSplitValue(val), total);
     updateForm({ onlineAmount: online, cashAmount: Math.max(0, total - online) });
   };
   // Payment mode change handler for split/cash/online
@@ -146,7 +157,7 @@ function RetainRiderInner() {
 
   const PACKAGE_OPTIONS = ["hourly", "daily", "weekly", "monthly"];
   const PAYMENT_OPTIONS = ["cash", "online", "split"];
-  const BIKE_MODEL_OPTIONS = ["MINK", "CITY", "KING"];
+  const BIKE_MODEL_OPTIONS = VEHICLE_MODEL_OPTIONS;
   const ACCESSORY_OPTIONS = [
     { key: "mobile_holder", label: "Mobile holder" },
     { key: "mirror", label: "Mirror" },
@@ -196,11 +207,11 @@ function RetainRiderInner() {
     }
   };
 
-  const filteredVehicleIds = useMemo(() => {
-    const q = String(vehicleQuery || "").trim().toUpperCase();
-    if (!q) return VEHICLE_ID_OPTIONS;
-    return VEHICLE_ID_OPTIONS.filter((id) => id.includes(q));
-  }, [vehicleQuery]);
+  const filteredVehicleGroups = useMemo(
+    () => filterVehicleIdGroups(vehicleQuery, getVehicleIdGroupsForModel(formData.bikeModel)),
+    [vehicleQuery, formData.bikeModel]
+  );
+  const filteredVehicleIds = useMemo(() => flattenVehicleIdGroups(filteredVehicleGroups), [filteredVehicleGroups]);
 
   const filteredBatteryIds = useMemo(() => {
     const q = String(batteryQuery || "").trim().toUpperCase();
@@ -364,17 +375,25 @@ function RetainRiderInner() {
   const upiId = import.meta.env.VITE_EVEGAH_UPI_ID || "";
   const payeeName = import.meta.env.VITE_EVEGAH_PAYEE_NAME || "Evegah";
   const amount = Number(formData.totalAmount || 0);
+  const cashAmount = Number(formData.cashAmount || 0);
+  const onlineAmount = Number(formData.onlineAmount || 0);
+  const totalPaid = cashAmount + onlineAmount;
+  const paymentMode = formData.paymentMode || "cash";
+
+  // For QR generation: use onlineAmount for split mode, total amount for online mode
+  const qrAmount = paymentMode === "split" ? onlineAmount : (paymentMode === "online" ? amount : 0);
+  const shouldShowQR = paymentMode === "online" || (paymentMode === "split" && onlineAmount > 0);
 
   const upiPayload = useMemo(() => {
-    if (!upiId) return "";
+    if (!upiId || !shouldShowQR || !qrAmount) return "";
     const params = new URLSearchParams({
       pa: upiId,
       pn: payeeName,
-      am: amount ? String(amount) : "",
+      am: String(qrAmount),
       cu: "INR",
     });
     return `upi://pay?${params.toString()}`;
-  }, [upiId, payeeName, amount]);
+  }, [upiId, payeeName, qrAmount, shouldShowQR]);
 
   const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
   const getImageDataUrl = (value) => {
@@ -484,6 +503,11 @@ function RetainRiderInner() {
       }
     }
 
+    if (totalPaid !== amount) {
+      setPaymentError("Cash + UPI payment totals must equal the total amount.");
+      return;
+    }
+
     if (creatingNewBooking) {
       if (!Array.isArray(formData.preRidePhotos) || formData.preRidePhotos.length === 0) {
         setPaymentError("Upload at least one pre-ride vehicle photo.");
@@ -537,6 +561,10 @@ function RetainRiderInner() {
             expected_end_time: endIso,
             meta: {
               issued_by_name: formData.issuedByName || null,
+              paymentBreakdown: {
+                cash: Number(formData.cashAmount || 0),
+                online: Number(formData.onlineAmount || 0),
+              },
               ...(iciciMerchantTranId ? { iciciMerchantTranId, merchantTranId: iciciMerchantTranId } : {}),
               ...(paymentTransactionId ? { paymentTransactionId } : {}),
             },
@@ -565,6 +593,10 @@ function RetainRiderInner() {
               issued_by_name: formData.issuedByName || null,
               employee_uid: user?.uid || null,
               employee_email: user?.email || null,
+              paymentBreakdown: {
+                cash: Number(formData.cashAmount || 0),
+                online: Number(formData.onlineAmount || 0),
+              },
               ...(iciciMerchantTranId ? { iciciMerchantTranId, merchantTranId: iciciMerchantTranId } : {}),
               ...(paymentTransactionId ? { paymentTransactionId } : {}),
             },
@@ -988,11 +1020,7 @@ function RetainRiderInner() {
                 >
                   {PAYMENT_OPTIONS.map((p) => (
                     <option key={p} value={p}>
-                      {p === "online"
-                        ? "Online"
-                        : p === "split"
-                          ? "Split (cash + online)"
-                          : "Cash"}
+                      {p === "online" ? "UPI" : p === "split" ? "Split (cash + UPI)" : "Cash"}
                     </option>
                   ))}
                 </select>
@@ -1042,7 +1070,7 @@ function RetainRiderInner() {
                   />
                 </div>
                 <div>
-                  <label className="label">Online Paid</label>
+                  <label className="label">UPI Paid</label>
                   <input
                     type="number"
                     min="0"
@@ -1054,6 +1082,10 @@ function RetainRiderInner() {
                 </div>
               </div>
             )}
+
+            {formData.paymentMode === "split" && totalPaid !== amount ? (
+              <p className="error">Cash + UPI payment totals must equal the total amount ({amount}).</p>
+            ) : null}
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
               <div>
@@ -1120,29 +1152,31 @@ function RetainRiderInner() {
                         {filteredVehicleIds.length === 0 ? (
                           <div className="px-3 py-2 text-sm text-gray-500">No matching vehicle id.</div>
                         ) : (
-                          filteredVehicleIds.map((id) => (
-                            (() => {
-                              const unavailable = unavailableVehicleSet.has(normalizeIdForCompare(id));
-                              return (
-                                <button
-                                  key={id}
-                                  type="button"
-                                  disabled={unavailable}
-                                  aria-disabled={unavailable}
-                                  className={`w-full rounded-lg px-3 py-2 text-left text-sm ${unavailable
-                                      ? "cursor-not-allowed text-gray-400"
-                                      : "hover:bg-gray-50"
-                                    } ${id === formData.bikeId ? "bg-gray-100" : ""}`}
-                                  onClick={() => {
-                                    if (unavailable) return;
-                                    selectVehicleId(id);
-                                  }}
-                                >
-                                  {id}
-                                  {unavailable ? " (Unavailable)" : ""}
-                                </button>
-                              );
-                            })()
+                          filteredVehicleGroups.map((group) => (
+                            <div key={group.label}>
+                              <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                                {group.label}
+                              </div>
+                              {(group.ids || []).map((id) => {
+                                const unavailable = unavailableVehicleSet.has(normalizeIdForCompare(id));
+                                return (
+                                  <button
+                                    key={id}
+                                    type="button"
+                                    disabled={unavailable}
+                                    aria-disabled={unavailable}
+                                    className={`w-full rounded-lg px-3 py-2 text-left text-sm ${unavailable ? "cursor-not-allowed text-gray-400" : "hover:bg-gray-50"} ${id === formData.bikeId ? "bg-gray-100" : ""}`}
+                                    onClick={() => {
+                                      if (unavailable) return;
+                                      selectVehicleId(id);
+                                    }}
+                                  >
+                                    {id}
+                                    {unavailable ? " (Unavailable)" : ""}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           ))
                         )}
                       </div>
@@ -1365,21 +1399,31 @@ function RetainRiderInner() {
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
               <div className="rounded-xl border border-evegah-border bg-gray-50 p-4 space-y-3">
                 <h4 className="font-medium text-evegah-text">Payment QR</h4>
-                {upiPayload ? (
-                  <div className="rounded-xl border border-evegah-border bg-white p-4 inline-flex">
-                    <QRCodeCanvas value={upiPayload} size={180} />
-                  </div>
+                {shouldShowQR ? (
+                  upiPayload ? (
+                    <div className="rounded-xl border border-evegah-border bg-white p-4 inline-flex">
+                      <QRCodeCanvas value={upiPayload} size={180} />
+                    </div>
+                  ) : (
+                    <p className="text-sm text-red-600">
+                      UPI QR is not configured. Set `VITE_EVEGAH_UPI_ID` in your `.env`.
+                    </p>
+                  )
                 ) : (
-                  <p className="text-sm text-red-600">
-                    UPI QR is not configured. Set `VITE_EVEGAH_UPI_ID` in your `.env`.
-                  </p>
+                  <p className="text-sm text-gray-600">Cash payment selected — no UPI QR required.</p>
                 )}
                 <div className="text-sm text-evegah-text space-y-1 mt-4">
                   <div>
                     <span className="text-gray-500">Total Amount:</span> {amount}
                   </div>
                   <div>
-                    <span className="text-gray-500">Payment Mode:</span> {String(formData.paymentMode || "-")}
+                    <span className="text-gray-500">Payment Mode:</span> {paymentMode === "online" ? "UPI" : paymentMode === "split" ? "Split" : "Cash"}
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Cash Paid:</span> {cashAmount}
+                  </div>
+                  <div>
+                    <span className="text-gray-500">UPI Paid:</span> {onlineAmount}
                   </div>
                 </div>
               </div>

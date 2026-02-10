@@ -19,7 +19,7 @@ import {
   listBatterySwaps,
 } from "../../../utils/batterySwaps";
 import { BATTERY_ID_OPTIONS } from "../../../utils/batteryIds";
-import { VEHICLE_ID_OPTIONS } from "../../../utils/vehicleIds";
+import { filterVehicleIdGroups, flattenVehicleIdGroups } from "../../../utils/vehicleIds";
 import { apiFetch } from "../../../config/api";
 import { formatDateTimeDDMMYYYY } from "../../../utils/dateFormat";
 
@@ -391,11 +391,8 @@ export default function BatterySwaps() {
     usageBatteryDropdownOpen,
   ]);
 
-  const filteredVehicleIds = useMemo(() => {
-    const query = String(vehicleQuery || "").trim().toUpperCase();
-    if (!query) return VEHICLE_ID_OPTIONS;
-    return VEHICLE_ID_OPTIONS.filter((id) => id.includes(query));
-  }, [vehicleQuery]);
+  const filteredVehicleGroups = useMemo(() => filterVehicleIdGroups(vehicleQuery), [vehicleQuery]);
+  const filteredVehicleIds = useMemo(() => flattenVehicleIdGroups(filteredVehicleGroups), [filteredVehicleGroups]);
 
   const filteredBatteryOutIds = useMemo(() => {
     const query = String(batteryOutQuery || "").trim().toUpperCase();
@@ -840,21 +837,26 @@ export default function BatterySwaps() {
                           {filteredVehicleIds.length === 0 ? (
                             <div className="px-3 py-2 text-sm text-gray-500">No matching vehicle.</div>
                           ) : (
-                            filteredVehicleIds.map((id) => {
-                              const selected = normalizeForCompare(id) === normalizeForCompare(form.vehicleNumber);
-                              return (
-                                <button
-                                  key={id}
-                                  type="button"
-                                  className={`w-full rounded-lg px-3 py-2 text-left text-sm ${
-                                    selected ? "bg-gray-100" : "hover:bg-gray-50"
-                                  }`}
-                                  onClick={() => selectVehicleId(id)}
-                                >
-                                  {id}
-                                </button>
-                              );
-                            })
+                            filteredVehicleGroups.map((group) => (
+                              <div key={group.label}>
+                                <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                                  {group.label}
+                                </div>
+                                {(group.ids || []).map((id) => {
+                                  const selected = normalizeForCompare(id) === normalizeForCompare(form.vehicleNumber);
+                                  return (
+                                    <button
+                                      key={id}
+                                      type="button"
+                                      className={`w-full rounded-lg px-3 py-2 text-left text-sm ${selected ? "bg-gray-100" : "hover:bg-gray-50"}`}
+                                      onClick={() => selectVehicleId(id)}
+                                    >
+                                      {id}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            ))
                           )}
                         </div>
                       </div>

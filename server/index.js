@@ -1094,7 +1094,10 @@ function parseAadhaarXmlLike(input) {
   while ((mm = re.exec(attrText))) {
     const key = String(mm[1] || "").trim();
     const val = String(mm[2] || "").trim();
-    if (key) attrs[key] = val;
+    if (!key) continue;
+    // Aadhaar XML attribute names vary in casing across providers.
+    // Normalize to lowercase so later lookups (dob/yob/name/house/pc/etc) are consistent.
+    attrs[key.toLowerCase()] = val;
   }
   return Object.keys(attrs).length ? attrs : null;
 }
@@ -1124,6 +1127,8 @@ function normalizeDobToIso(value) {
   if (!v) return "";
   // Already ISO date
   if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  // Year only (common when Aadhaar has only YOB)
+  if (/^\d{4}$/.test(v)) return `${v}-01-01`;
   // Common Aadhaar XML format: DD-MM-YYYY (or DD/MM/YYYY)
   const m = v.match(/^(\d{2})[-/](\d{2})[-/](\d{4})$/);
   if (m) {
@@ -1220,6 +1225,13 @@ function extractDigiLockerRiderData({ userinfo, aadhaarResponse, fallbackLast4 }
     userinfo?.dob ||
     userinfo?.date_of_birth ||
     userinfo?.birthdate ||
+    userinfo?.birth_date ||
+    userinfo?.DOB ||
+    userinfo?.DateOfBirth ||
+    userinfo?.profile?.dob ||
+    userinfo?.profile?.date_of_birth ||
+    userinfo?.profile?.birthdate ||
+    userinfo?.profile?.birth_date ||
     aadhaarAttrs?.dob ||
     (aadhaarAttrs?.yob ? String(aadhaarAttrs.yob) : "") ||
     "";
@@ -3264,11 +3276,21 @@ app.patch("/api/rentals/:id", async (req, res) => {
           });
         }
 
-        // Verify payment amount matches rental amount
-        if (paymentTxn.amount !== totalAmount) {
+        const expectedTxnAmount = (() => {
+          if (paymentMode !== "split") return parseMoneyValue(totalAmount);
+          const online =
+            parseMoneyValue(newRentalMeta?.paymentBreakdown?.online) ??
+            parseMoneyValue(rentalMeta?.paymentBreakdown?.online);
+          return online ?? parseMoneyValue(totalAmount);
+        })();
+
+        const paid = parseMoneyValue(paymentTxn.amount);
+
+        // Verify payment amount matches expected ICICI-paid amount
+        if (expectedTxnAmount !== null && paid !== null && paid !== expectedTxnAmount) {
           await client.query("rollback");
           return res.status(402).json({
-            error: `Payment amount mismatch. Expected ₹${totalAmount}, but payment is ₹${paymentTxn.amount}.`,
+            error: `Payment amount mismatch. Expected ₹${expectedTxnAmount}, but payment is ₹${paid}.`,
             paymentRequired: true,
           });
         }
@@ -4451,11 +4473,18 @@ app.post("/api/registrations/new-rider", async (req, res) => {
         });
       }
 
-      // Verify payment amount matches rental amount
-      const rentalAmount = Number(rental.total_amount ?? rental.totalAmount ?? 0);
-      if (paymentAmount !== null && paymentAmount !== rentalAmount) {
+      // Verify payment amount matches expected ICICI-paid amount
+      const rentalAmount = parseMoneyValue(rental.total_amount ?? rental.totalAmount ?? 0) ?? 0;
+      const expectedTxnAmount = (() => {
+        if (paymentMode !== "split") return rentalAmount;
+        const online = parseMoneyValue(rentalMeta?.paymentBreakdown?.online);
+        return online ?? rentalAmount;
+      })();
+
+      const paid = parseMoneyValue(paymentAmount);
+      if (paid !== null && expectedTxnAmount !== null && paid !== expectedTxnAmount) {
         return res.status(402).json({
-          error: `Payment amount mismatch. Expected ₹${rentalAmount}, but payment is ₹${paymentAmount}.`,
+          error: `Payment amount mismatch. Expected ₹${expectedTxnAmount}, but payment is ₹${paid}.`,
           paymentRequired: true,
         });
       }
