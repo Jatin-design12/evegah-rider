@@ -78,6 +78,14 @@ const iciciTransactionStatusEndpoint = String(process.env.ICICI_TRANSACTION_STAT
 const iciciCallbackStatusEndpoint = String(process.env.ICICI_CALLBACK_STATUS_ENDPOINT || "").trim();
 const iciciRefundEndpoint = String(process.env.ICICI_REFUND_ENDPOINT || "").trim();
 
+// Public (no-auth) config for frontend convenience.
+// Used by getPublicConfig() in src/config/api.js
+app.get("/api/config", (_req, res) => {
+  const upiId = String(process.env.EVEGAH_UPI_ID || process.env.ICICI_VPA || "").trim();
+  const payeeName = String(process.env.EVEGAH_PAYEE_NAME || process.env.ICICI_PAYEE_NAME || "Evegah").trim();
+  res.json({ upiId: upiId || null, payeeName: payeeName || "Evegah" });
+});
+
 function tryParseJson(text) {
   const s = String(text || "").trim();
   if (!s) return null;
@@ -4380,14 +4388,25 @@ app.post("/api/registrations/new-rider", async (req, res) => {
 
   if (iciciEnabled && paymentMode !== "cash" && merchantTranId) {
     try {
-      // Check payment transaction status in database
-      const { rows } = await pool.query(
-        `select status, amount, transaction_type
-         from public.payment_transactions
-         where merchant_tran_id = $1
-         limit 1`,
-        [merchantTranId]
-      );
+      // Check payment transaction status in database (preferred).
+      // If the DB/table isn't available, fall back to ICICI status API.
+      let rows = [];
+      try {
+        const q = await pool.query(
+          `select status, amount, transaction_type
+           from public.payment_transactions
+           where merchant_tran_id = $1
+           limit 1`,
+          [merchantTranId]
+        );
+        rows = q?.rows || [];
+      } catch (dbError) {
+        console.warn(
+          "Payment DB lookup failed; falling back to ICICI status API",
+          String(dbError?.message || dbError)
+        );
+        rows = [];
+      }
 
       let paymentStatus = null;
       let paymentAmount = null;

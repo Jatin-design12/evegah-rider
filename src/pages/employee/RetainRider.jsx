@@ -10,7 +10,7 @@ import {
   getVehicleIdGroupsForModel,
   VEHICLE_MODEL_OPTIONS,
 } from "../../utils/vehicleIds";
-import { apiFetch } from "../../config/api";
+import { apiFetch, getPublicConfig } from "../../config/api";
 import { RiderFormProvider } from "./RiderFormContext";
 import { useRiderForm } from "./useRiderForm";
 import { downloadRiderReceiptPdf } from "../../utils/riderReceiptPdf";
@@ -372,8 +372,20 @@ function RetainRiderInner() {
     await prefillFromLastRental(r?.id, { preferZone: preferZoneFromRentals });
   };
 
-  const upiId = import.meta.env.VITE_EVEGAH_UPI_ID || "";
-  const payeeName = import.meta.env.VITE_EVEGAH_PAYEE_NAME || "Evegah";
+  const [publicConfig, setPublicConfig] = useState({ upiId: null, payeeName: "Evegah" });
+  useEffect(() => {
+    getPublicConfig().then(setPublicConfig);
+  }, []);
+
+  const configuredUpiId = import.meta.env.VITE_EVEGAH_UPI_ID || publicConfig.upiId;
+  const defaultUpiId = "temp.evegah@okaxis";
+  const effectiveUpiId = configuredUpiId || defaultUpiId;
+  const payeeName = import.meta.env.VITE_EVEGAH_PAYEE_NAME || publicConfig.payeeName || "Evegah";
+  const iciciEnabled =
+    String(import.meta.env.VITE_ICICI_ENABLED || "")
+      .trim()
+      .replace(/^"+|"+$/g, "")
+      .toLowerCase() === "true";
   const amount = Number(formData.totalAmount || 0);
   const cashAmount = Number(formData.cashAmount || 0);
   const onlineAmount = Number(formData.onlineAmount || 0);
@@ -385,15 +397,147 @@ function RetainRiderInner() {
   const shouldShowQR = paymentMode === "online" || (paymentMode === "split" && onlineAmount > 0);
 
   const upiPayload = useMemo(() => {
-    if (!upiId || !shouldShowQR || !qrAmount) return "";
+    if (!effectiveUpiId || !shouldShowQR || !qrAmount) return "";
     const params = new URLSearchParams({
-      pa: upiId,
+      pa: effectiveUpiId,
       pn: payeeName,
       am: String(qrAmount),
       cu: "INR",
     });
     return `upi://pay?${params.toString()}`;
-  }, [upiId, payeeName, qrAmount, shouldShowQR]);
+  }, [effectiveUpiId, payeeName, qrAmount, shouldShowQR]);
+
+  const [iciciQrData, setIciciQrData] = useState(null);
+  const [iciciQrLoading, setIciciQrLoading] = useState(false);
+  const [iciciQrError, setIciciQrError] = useState("");
+
+  const iciciMerchantTranId = useMemo(() => {
+    const v =
+      formData?.iciciMerchantTranId ||
+      formData?.merchantTranId ||
+      iciciQrData?.merchantTranId ||
+      iciciQrData?.merchant_tran_id ||
+      null;
+    const s = String(v || "").trim();
+    return s || null;
+  }, [formData?.iciciMerchantTranId, formData?.merchantTranId, iciciQrData]);
+
+  const [iciciTxnStatus, setIciciTxnStatus] = useState("");
+  const [iciciTxnError, setIciciTxnError] = useState("");
+  const [iciciTxnVerified, setIciciTxnVerified] = useState(false);
+
+  // Generate ICICI QR when ICICI is enabled and QR should be shown.
+  useEffect(() => {
+    if (!iciciEnabled || !shouldShowQR || !qrAmount || !formData.name) {
+      setIciciQrData(null);
+      setIciciQrError("");
+      return;
+    }
+
+    let cancelled = false;
+
+    const generateQr = async () => {
+      setIciciQrLoading(true);
+      setIciciQrError("");
+      try {
+        const response = await apiFetch("/api/payments/icici/qr", {
+          method: "POST",
+          body: {
+            amount: qrAmount,
+            transactionType: "RETAIN_RIDER",
+            riderId: formData.existingRiderId || null,
+            rentalId: formData.activeRentalId || null,
+            merchantTranId: `EVG${Date.now()}${Math.random().toString(16).slice(2, 6)}`.slice(0, 35),
+            billNumber: `EVG-${Date.now()}`.slice(0, 50),
+          },
+        });
+
+        if (!cancelled) {
+          setIciciQrData(response);
+          const nextMerchantTranId = String(
+            response?.merchantTranId || response?.merchant_tran_id || ""
+          ).trim();
+          const nextPaymentTransactionId = String(
+            response?.paymentTransactionId || response?.payment_transaction_id || ""
+          ).trim();
+          updateForm({
+            ...(nextMerchantTranId
+              ? { iciciMerchantTranId: nextMerchantTranId, merchantTranId: nextMerchantTranId }
+              : {}),
+            ...(nextPaymentTransactionId ? { paymentTransactionId: nextPaymentTransactionId } : {}),
+          });
+        }
+      } catch (error) {
+        console.error("ICICI QR generation failed:", error);
+        if (!cancelled) setIciciQrError(String(error?.message || error));
+      } finally {
+        if (!cancelled) setIciciQrLoading(false);
+      }
+    };
+
+    generateQr();
+    return () => {
+      cancelled = true;
+    };
+  }, [iciciEnabled, shouldShowQR, qrAmount, formData.name, formData.existingRiderId, formData.activeRentalId]);
+
+  // Poll ICICI status so the UI can auto-detect payment completion.
+  useEffect(() => {
+    if (!iciciEnabled || !shouldShowQR) {
+      setIciciTxnStatus("");
+      setIciciTxnError("");
+      setIciciTxnVerified(false);
+      return;
+    }
+
+    if (!iciciMerchantTranId || retainSuccess || String(paymentMode || "").toLowerCase() === "cash") {
+      setIciciTxnStatus("");
+      setIciciTxnError("");
+      setIciciTxnVerified(false);
+      return;
+    }
+
+    let cancelled = false;
+    let intervalId = null;
+    let attempts = 0;
+    const maxAttempts = 60; // ~5 min at 5s interval
+
+    const poll = async () => {
+      attempts += 1;
+      try {
+        const decoded = await apiFetch("/api/payments/icici/status", {
+          method: "POST",
+          body: { merchantTranId: iciciMerchantTranId },
+        });
+
+        const raw = String(decoded?.status || decoded?.Status || "").trim();
+        const next = raw ? raw.toUpperCase() : "";
+        if (!cancelled) {
+          setIciciTxnStatus(next);
+          setIciciTxnError("");
+        }
+
+        if (next === "SUCCESS") {
+          if (!cancelled) setIciciTxnVerified(true);
+          if (intervalId) window.clearInterval(intervalId);
+        } else if (next === "FAILURE" || next === "FAILED") {
+          if (!cancelled) setIciciTxnVerified(false);
+          if (intervalId) window.clearInterval(intervalId);
+        } else if (attempts >= maxAttempts) {
+          if (intervalId) window.clearInterval(intervalId);
+        }
+      } catch (e) {
+        if (!cancelled) setIciciTxnError(String(e?.message || e || "Unable to check payment status"));
+      }
+    };
+
+    poll();
+    intervalId = window.setInterval(poll, 5000);
+    return () => {
+      cancelled = true;
+      if (intervalId) window.clearInterval(intervalId);
+    };
+  }, [iciciEnabled, shouldShowQR, iciciMerchantTranId, retainSuccess, paymentMode]);
 
   const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
   const getImageDataUrl = (value) => {
@@ -506,6 +650,33 @@ function RetainRiderInner() {
     if (totalPaid !== amount) {
       setPaymentError("Cash + UPI payment totals must equal the total amount.");
       return;
+    }
+
+    if (iciciEnabled && String(paymentMode || "").toLowerCase() !== "cash") {
+      if (!iciciMerchantTranId) {
+        setPaymentError("ICICI payment reference not found. Please re-generate the QR and complete payment.");
+        return;
+      }
+
+      if (!iciciTxnVerified) {
+        try {
+          const decoded = await apiFetch("/api/payments/icici/status", {
+            method: "POST",
+            body: { merchantTranId: iciciMerchantTranId },
+          });
+          const raw = String(decoded?.status || decoded?.Status || "").trim();
+          const next = raw ? raw.toUpperCase() : "";
+          setIciciTxnStatus(next);
+          if (next !== "SUCCESS") {
+            setPaymentError(`Payment not completed. Current status: ${next || "PENDING"}.`);
+            return;
+          }
+          setIciciTxnVerified(true);
+        } catch (e) {
+          setPaymentError(String(e?.message || e || "Unable to verify payment. Please try again."));
+          return;
+        }
+      }
     }
 
     if (creatingNewBooking) {
@@ -1400,13 +1571,76 @@ function RetainRiderInner() {
               <div className="rounded-xl border border-evegah-border bg-gray-50 p-4 space-y-3">
                 <h4 className="font-medium text-evegah-text">Payment QR</h4>
                 {shouldShowQR ? (
-                  upiPayload ? (
-                    <div className="rounded-xl border border-evegah-border bg-white p-4 inline-flex">
-                      <QRCodeCanvas value={upiPayload} size={180} />
-                    </div>
+                  iciciEnabled ? (
+                    <>
+                      {iciciQrLoading && (
+                        <div className="flex items-center justify-center p-8">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-evegah-primary"></div>
+                          <span className="ml-2 text-sm text-gray-500">Generating QR...</span>
+                        </div>
+                      )}
+
+                      {iciciQrError && (
+                        <p className="text-sm text-red-600">
+                          ICICI QR generation failed: {iciciQrError}
+                        </p>
+                      )}
+
+                      {iciciMerchantTranId ? (
+                        <div className="text-xs text-gray-500 space-y-1">
+                          <div>
+                            <span className="text-gray-500">Merchant Tran ID:</span> {iciciMerchantTranId}
+                          </div>
+                          {iciciTxnVerified ? (
+                            <div className="text-green-700">Payment received (SUCCESS).</div>
+                          ) : iciciTxnError ? (
+                            <div className="text-red-600">Payment status check failed: {iciciTxnError}</div>
+                          ) : iciciTxnStatus ? (
+                            <div>Payment status: {iciciTxnStatus}</div>
+                          ) : (
+                            <div>Waiting for payment confirmation...</div>
+                          )}
+                        </div>
+                      ) : null}
+
+                      {iciciQrData?.qrCode && (
+                        <div className="rounded-xl border border-evegah-border bg-white p-4 inline-flex">
+                          {iciciQrData.qrCode.startsWith("data:") || iciciQrData.qrCode.startsWith("http") ? (
+                            <img src={iciciQrData.qrCode} alt="ICICI Payment QR" className="w-45 h-45" />
+                          ) : (
+                            <img
+                              src={`data:image/png;base64,${iciciQrData.qrCode}`}
+                              alt="ICICI Payment QR"
+                              className="w-45 h-45"
+                            />
+                          )}
+                        </div>
+                      )}
+
+                      {iciciQrData?.qrString && !iciciQrData?.qrCode && (
+                        <div className="rounded-xl border border-evegah-border bg-white p-4 inline-flex">
+                          <QRCodeCanvas value={iciciQrData.qrString} size={180} />
+                        </div>
+                      )}
+
+                      {!iciciQrLoading && !iciciQrError && !iciciQrData?.qrCode && !iciciQrData?.qrString ? (
+                        <p className="text-sm text-gray-500">ICICI QR not available</p>
+                      ) : null}
+                    </>
+                  ) : upiPayload ? (
+                    <>
+                      <div className="rounded-xl border border-evegah-border bg-white p-4 inline-flex">
+                        <QRCodeCanvas value={upiPayload} size={180} />
+                      </div>
+                      {!configuredUpiId ? (
+                        <p className="text-sm text-red-600">
+                          UPI QR is not configured. Set <code>VITE_EVEGAH_UPI_ID</code> in frontend <code>.env</code> or <code>EVEGAH_UPI_ID</code> (or <code>ICICI_VPA</code>) in backend <code>server/.env</code>.
+                        </p>
+                      ) : null}
+                    </>
                   ) : (
                     <p className="text-sm text-red-600">
-                      UPI QR is not configured. Set `VITE_EVEGAH_UPI_ID` in your `.env`.
+                      UPI QR is not configured. Set <code>VITE_EVEGAH_UPI_ID</code> in frontend <code>.env</code> or <code>EVEGAH_UPI_ID</code> (or <code>ICICI_VPA</code>) in backend <code>server/.env</code>.
                     </p>
                   )
                 ) : (
@@ -1435,7 +1669,10 @@ function RetainRiderInner() {
                     type="button"
                     className="btn-primary disabled:opacity-60"
                     onClick={handleComplete}
-                    disabled={savingPayment}
+                    disabled={
+                      savingPayment ||
+                      (iciciEnabled && String(paymentMode || "").toLowerCase() !== "cash" && !iciciTxnVerified)
+                    }
                   >
                     {savingPayment ? "Saving..." : "Complete"}
                   </button>
