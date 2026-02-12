@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useMemo } from "react";
+import { useParams } from "react-router-dom";
 
 export default function Invoice() {
   const { receiptId, "*": invoicePath } = useParams();
@@ -63,6 +63,11 @@ export default function Invoice() {
     return `/api/uploads/${encodeURIComponent(fileName)}`;
   }, [receiptId, invoicePath]);
 
+  useEffect(() => {
+    if (!pdfUrl) return;
+    window.location.replace(pdfUrl);
+  }, [pdfUrl]);
+
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-10">
       <div className="mb-6 flex items-start justify-between gap-4">
@@ -77,32 +82,20 @@ export default function Invoice() {
           </p>
         </div>
 
-        <div className="flex gap-2">
-          <Link
-            to="/"
-            className="rounded-lg border border-evegah-border bg-white px-3 py-2 text-sm text-evegah-text hover:bg-gray-50"
+        {pdfUrl ? (
+          <a
+            href={pdfUrl}
+            className="rounded-lg bg-evegah-primary px-3 py-2 text-sm font-medium text-white hover:opacity-95"
+            download
           >
-            Back
-          </Link>
-          {pdfUrl ? (
-            <a
-              href={pdfUrl}
-              className="rounded-lg bg-evegah-primary px-3 py-2 text-sm font-medium text-white hover:opacity-95"
-              download
-            >
-              Download PDF
-            </a>
-          ) : null}
-        </div>
+            Download PDF
+          </a>
+        ) : null}
       </div>
 
       {pdfUrl ? (
-        <div className="overflow-hidden rounded-xl border border-evegah-border bg-white">
-          <iframe
-            title="Receipt PDF"
-            src={pdfUrl}
-            className="h-[80vh] w-full"
-          />
+        <div className="rounded-xl border border-evegah-border bg-white p-4 text-sm text-gray-600">
+          Opening receipt...
         </div>
       ) : (
         <div className="rounded-xl border border-evegah-border bg-white p-4 text-sm text-gray-600">
