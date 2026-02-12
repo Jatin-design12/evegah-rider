@@ -2313,16 +2313,9 @@ app.post("/api/whatsapp/send-receipt", async (req, res) => {
       to: `91${toDigitsValue}`,
     };
 
-    // Enforce direct attachment when a template is configured.
-    // If the template doesn't have a document header, we cannot attach a PDF in the template.
-    if (templateName && templateHeaderType !== "document") {
-      return res.status(200).json({
-        sent: false,
-        mediaUrl,
-        reason: "WhatsApp template is configured but WHATSAPP_TEMPLATE_HEADER_TYPE is not 'document'. Configure an approved template with a document header to send the PDF as a direct attachment.",
-        fallback: null,
-      });
-    }
+    // Template can be used with or without a document header.
+    // - document header => direct PDF attachment via WhatsApp media upload
+    // - no/other header => rely on template body + dynamic URL button for receipt viewing
 
     const shouldUploadMedia = Boolean(
       whatsappPhoneNumberId &&
@@ -2369,7 +2362,7 @@ app.post("/api/whatsapp/send-receipt", async (req, res) => {
       }
     }
 
-    // If template is configured, require media upload to succeed so the rider gets a direct attachment.
+    // If template uses a document header, require media upload to succeed.
     if (templateName && templateHeaderType === "document" && !templateHeaderMediaId) {
       return res.status(200).json({
         sent: false,
