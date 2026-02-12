@@ -4,9 +4,19 @@ import { Link, useParams } from "react-router-dom";
 export default function Invoice() {
   const { receiptId, "*": invoicePath } = useParams();
 
+  const decodeSafe = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  };
+
   const normalizedId = useMemo(() => {
-    const fromId = String(receiptId || "").trim();
-    const fromPath = decodeURIComponent(String(invoicePath || "").trim());
+    const fromId = decodeSafe(receiptId);
+    const fromPath = decodeSafe(invoicePath);
 
     // Case 1: /invoice/<id>
     if (fromId && !fromPath) return fromId;
@@ -25,8 +35,8 @@ export default function Invoice() {
   }, [receiptId, invoicePath]);
 
   const pdfUrl = useMemo(() => {
-    const fromPathRaw = decodeURIComponent(String(invoicePath || "").trim());
-    const fromIdRaw = decodeURIComponent(String(receiptId || "").trim());
+    const fromPathRaw = decodeSafe(invoicePath);
+    const fromIdRaw = decodeSafe(receiptId);
     const raw = fromPathRaw || fromIdRaw;
     if (!raw) return null;
 
@@ -36,11 +46,16 @@ export default function Invoice() {
     // - /api/uploads/receipt_xxx.pdf
     // - uploads/receipt_xxx.pdf
     // - /uploads/receipt_xxx.pdf
-    const lower = raw.toLowerCase();
-    if (lower.includes("api/uploads/") || lower.includes("uploads/")) {
-      const withoutOrigin = raw.replace(/^https?:\/\/[^/]+/i, "");
-      const normalized = withoutOrigin.startsWith("/") ? withoutOrigin : `/${withoutOrigin}`;
-      return normalized;
+    // Also handles malformed values like "{{1}}api/uploads/file.pdf".
+    const withoutOrigin = raw.replace(/^https?:\/\/[^/]+/i, "");
+    const normalizedRaw = withoutOrigin
+      .replace(/^\{\{1\}\}/, "")
+      .replace(/^%7B%7B1%7D%7D/i, "")
+      .replace(/^\/+/, "");
+
+    const uploadsMatch = normalizedRaw.match(/(?:^|\/)(api\/uploads\/.+|uploads\/.+)/i);
+    if (uploadsMatch?.[1]) {
+      return `/${uploadsMatch[1].replace(/^\/+/, "")}`;
     }
 
     // Otherwise treat it as receipt id and use the legacy naming convention.
