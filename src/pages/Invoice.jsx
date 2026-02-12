@@ -2,18 +2,51 @@ import { useMemo } from "react";
 import { Link, useParams } from "react-router-dom";
 
 export default function Invoice() {
-  const { receiptId } = useParams();
+  const { receiptId, "*": invoicePath } = useParams();
 
   const normalizedId = useMemo(() => {
-    const v = String(receiptId || "").trim();
-    return v || null;
-  }, [receiptId]);
+    const fromId = String(receiptId || "").trim();
+    const fromPath = decodeURIComponent(String(invoicePath || "").trim());
+
+    // Case 1: /invoice/<id>
+    if (fromId && !fromPath) return fromId;
+
+    // Case 2: /invoice/api/uploads/<file>.pdf OR encoded variant.
+    // Keep a readable label when the value is a path by showing final filename.
+    const candidate = fromPath || fromId;
+    if (!candidate) return null;
+
+    if (candidate.includes("/")) {
+      const parts = candidate.split("/").filter(Boolean);
+      return parts[parts.length - 1] || null;
+    }
+
+    return candidate;
+  }, [receiptId, invoicePath]);
 
   const pdfUrl = useMemo(() => {
-    if (!normalizedId) return null;
-    const fileName = `receipt_${normalizedId}.pdf`;
+    const fromPathRaw = decodeURIComponent(String(invoicePath || "").trim());
+    const fromIdRaw = decodeURIComponent(String(receiptId || "").trim());
+    const raw = fromPathRaw || fromIdRaw;
+    if (!raw) return null;
+
+    // If WhatsApp button passed an uploads path, use it directly.
+    // Supported examples:
+    // - api/uploads/receipt_xxx.pdf
+    // - /api/uploads/receipt_xxx.pdf
+    // - uploads/receipt_xxx.pdf
+    // - /uploads/receipt_xxx.pdf
+    const lower = raw.toLowerCase();
+    if (lower.includes("api/uploads/") || lower.includes("uploads/")) {
+      const withoutOrigin = raw.replace(/^https?:\/\/[^/]+/i, "");
+      const normalized = withoutOrigin.startsWith("/") ? withoutOrigin : `/${withoutOrigin}`;
+      return normalized;
+    }
+
+    // Otherwise treat it as receipt id and use the legacy naming convention.
+    const fileName = `receipt_${raw}.pdf`;
     return `/api/uploads/${encodeURIComponent(fileName)}`;
-  }, [normalizedId]);
+  }, [receiptId, invoicePath]);
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 py-10">

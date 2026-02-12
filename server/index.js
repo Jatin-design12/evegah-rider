@@ -2544,6 +2544,17 @@ app.post("/api/whatsapp/send-receipt", async (req, res) => {
             if (templateUrlButtonIndexRaw) {
               const index = Number.parseInt(templateUrlButtonIndexRaw, 10);
               if (Number.isFinite(index) && index >= 0) {
+                const defaultButtonUrlParam =
+                  String(mediaPath || "").replace(/^\/+/, "") ||
+                  (() => {
+                    try {
+                      const u = new URL(String(mediaUrl || ""));
+                      return `${u.pathname || ""}${u.search || ""}`.replace(/^\/+/, "");
+                    } catch {
+                      return String(mediaUrl || "").replace(/^\/+/, "");
+                    }
+                  })();
+
                 const buttonValue = (() => {
                   const values = {
                     name: riderName,
@@ -2585,24 +2596,17 @@ app.post("/api/whatsapp/send-receipt", async (req, res) => {
                     return String(raw).replace(/^\/+/, "");
                   }
 
+                  // If requested key doesn't resolve, use receipt path param by default.
+                  if (!String(raw || "").trim()) return defaultButtonUrlParam;
                   return raw;
                 })();
 
                 // If the template has a dynamic URL button, Meta requires a parameter.
                 // Fail fast with a clear message rather than sending an invalid request.
                 if (!buttonValue) {
-                  components.push({
-                    type: "button",
-                    sub_type: "url",
-                    index: String(index),
-                    parameters: [
-                      {
-                        type: "text",
-                        text: String(receiptNumber || receiptId || mediaPathNoSlash || mediaUrl || "").trim(),
-                        ...(useNamedParams ? { parameter_name: "1" } : {}),
-                      },
-                    ],
-                  });
+                  throw new Error(
+                    "Template URL button parameter is empty. Ensure PUBLIC_BASE_URL/PUBLIC_UPLOADS_PREFIX are configured and WHATSAPP_TEMPLATE_URL_BUTTON_VALUE_KEY maps to media path."
+                  );
                 } else {
                   components.push({
                     type: "button",

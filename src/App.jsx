@@ -36,6 +36,7 @@ export default function App() {
             <Route path="/" element={<Login />} />
             <Route path="/redirect" element={<Redirect />} />
             <Route path="/invoice/:receiptId" element={<Invoice />} />
+            <Route path="/invoice/*" element={<Invoice />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
             <Route path="/terms" element={<TermsOfService />} />
 
