@@ -841,13 +841,25 @@ function createReceiptPdfBuffer({ formData, registration }) {
         return Number.isInteger(n) ? String(n) : n.toFixed(2);
       };
 
-      const paidAmountRaw =
-        formData?.amountPaid ??
-        formData?.paidAmount ??
-        formData?.paymentDetails?.totalAmount ??
-        formData?.totalAmount ??
-        formData?.amount ??
-        "";
+      const paidAmountRaw = (() => {
+        const candidates = [
+          formData?.amountPaid,
+          formData?.paidAmount,
+          formData?.paymentDetails?.totalAmount,
+          formData?.totalAmount,
+          formData?.amount,
+        ];
+
+        for (const v of candidates) {
+          const parsed = parseMoney(v);
+          if (parsed !== null && parsed > 0) return parsed;
+        }
+        for (const v of candidates) {
+          const parsed = parseMoney(v);
+          if (parsed !== null) return parsed;
+        }
+        return "";
+      })();
 
       const paidAmount = formatMoney(paidAmountRaw);
       drawSection("Payment Receipt", [
@@ -2424,16 +2436,20 @@ app.post("/api/whatsapp/send-receipt", async (req, res) => {
             const useNamedParams = templateParamModeRaw === "named";
 
             // Try to derive amount if present
-            const amount =
-              resolvedAmountText ||
-              formatMoneyCompact(
-                formData?.amountPaid ??
-                formData?.paidAmount ??
-                formData?.paymentDetails?.totalAmount ??
-                formData?.totalAmount ??
-                formData?.amount ??
-                ""
-              );
+            const amount = (() => {
+              if (resolvedAmountText) return resolvedAmountText;
+              const candidates = [
+                formData?.amountPaid,
+                formData?.paidAmount,
+                formData?.paymentDetails?.totalAmount,
+                formData?.totalAmount,
+                formData?.amount,
+              ];
+              const positive = firstPositiveMoneyValue(candidates);
+              if (positive !== null) return formatMoneyCompact(positive);
+              const any = firstAnyMoneyValue(candidates);
+              return any === null ? "" : formatMoneyCompact(any);
+            })();
 
             const paymentMode =
               formData?.paymentMode ??
@@ -2558,7 +2574,25 @@ app.post("/api/whatsapp/send-receipt", async (req, res) => {
                     plan: String(plan ?? ""),
                     fileName,
                   };
-                  return getTemplateValue(values, templateUrlButtonValueKey);
+
+                  const raw = getTemplateValue(values, templateUrlButtonValueKey);
+                  const keyLower = String(templateUrlButtonValueKey || "").trim().toLowerCase();
+
+                  // For dynamic URL buttons, WhatsApp templates typically use a fixed base URL
+                  // and expect only a variable suffix in {{1}}. If the configured key resolves
+                  // to a full media URL, convert it to path-without-leading-slash.
+                  if ((keyLower === "mediaurl" || keyLower === "url" || keyLower === "link") && raw) {
+                    try {
+                      const u = new URL(String(raw));
+                      const suffix = `${u.pathname || ""}${u.search || ""}`.replace(/^\/+/, "");
+                      if (suffix) return suffix;
+                    } catch {
+                      // ignore parse errors and fall back to raw value
+                    }
+                    return String(raw).replace(/^\/+/, "");
+                  }
+
+                  return raw;
                 })();
 
                 // If the template has a dynamic URL button, Meta requires a parameter.
