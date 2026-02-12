@@ -38,6 +38,9 @@ export default function SignaturePad({ value, onChange, height = 180 }) {
     }
 
     try {
+      // `fromDataURL` draws onto the existing canvas.
+      // Clear first to avoid the signature appearing "double" after Save.
+      sigRef.current.clear();
       sigRef.current.fromDataURL(value);
     } catch {
       // ignore invalid data urls

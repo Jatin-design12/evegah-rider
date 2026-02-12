@@ -111,7 +111,7 @@ export default function Step5Payment() {
 
     const generateQr = async () => {
       setIciciQrLoading(true);
-      setIciciQrError("");
+      setIciciQrError("");  
       try {
         const response = await apiFetch("/api/payments/icici/qr", {
           method: "POST",
