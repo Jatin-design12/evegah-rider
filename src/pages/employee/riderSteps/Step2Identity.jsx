@@ -53,6 +53,13 @@ export default function Step2Identity() {
   const PACKAGE_OPTIONS = ["minute", "hourly", "daily", "weekly", "monthly"];
   const PAYMENT_OPTIONS = ["cash", "online", "split"];
   const BIKE_MODEL_OPTIONS = VEHICLE_MODEL_OPTIONS;
+  const DEFAULT_BATTERY_MODELS = new Set([
+    "paddle cycle",
+    "electric scooter",
+    "kids ev car",
+    "kids paddle scooter",
+    "double seat cycle",
+  ]);
   const ACCESSORY_OPTIONS = [
     { key: "mobile_holder", label: "Mobile holder" },
     { key: "mirror", label: "Mirror" },
@@ -108,6 +115,9 @@ export default function Step2Identity() {
 
   const isNonEmpty = (v) => Boolean(String(v ?? "").trim());
 
+  const normalizeModel = (value) => String(value || "").trim().toLowerCase();
+  const isDefaultBatteryModel = DEFAULT_BATTERY_MODELS.has(normalizeModel(formData.bikeModel));
+
   const normalizeIdForCompare = (value) =>
     String(value || "")
       .replace(/[^a-z0-9]+/gi, "")
@@ -127,6 +137,21 @@ export default function Step2Identity() {
     const now = toDateTimeLocal(new Date());
     setFormData((prev) => ({ ...prev, rentalStart: now }));
   }, [formData.rentalPackage]);
+
+  useEffect(() => {
+    if (isDefaultBatteryModel) {
+      if (formData.batteryId !== "Default") {
+        updateForm({ batteryId: "Default" });
+      }
+      setBatteryDropdownOpen(false);
+      setBatteryQuery("");
+      return;
+    }
+
+    if (formData.batteryId === "Default") {
+      updateForm({ batteryId: "" });
+    }
+  }, [isDefaultBatteryModel, formData.batteryId, updateForm]);
 
   useEffect(() => {
     let mounted = true;
@@ -205,9 +230,9 @@ export default function Step2Identity() {
     Number(formData.securityDeposit ?? 0) >= 0 &&
     isNonEmpty(formData.bikeModel) &&
     isNonEmpty(formData.bikeId) &&
-    isNonEmpty(formData.batteryId) &&
+    (isDefaultBatteryModel || isNonEmpty(formData.batteryId)) &&
     !unavailableVehicleSet.has(normalizeIdForCompare(formData.bikeId)) &&
-    !unavailableBatterySet.has(normalizeIdForCompare(formData.batteryId)) &&
+    (isDefaultBatteryModel || !unavailableBatterySet.has(normalizeIdForCompare(formData.batteryId))) &&
     paymentSplitValid;
 
   const handleNext = () => {
@@ -484,10 +509,15 @@ export default function Step2Identity() {
             <div ref={batteryDropdownRef} className="relative">
               <button
                 type="button"
-                className="select flex items-center justify-between gap-3"
+                className={`select flex items-center justify-between gap-3 ${
+                  isDefaultBatteryModel ? "cursor-not-allowed bg-gray-100 text-gray-500" : ""
+                }`}
                 aria-haspopup="listbox"
                 aria-expanded={batteryDropdownOpen}
+                disabled={isDefaultBatteryModel}
+                aria-disabled={isDefaultBatteryModel}
                 onClick={() => {
+                  if (isDefaultBatteryModel) return;
                   setBatteryDropdownOpen((v) => {
                     const next = !v;
                     if (!v && next) {
@@ -498,12 +528,12 @@ export default function Step2Identity() {
                 }}
               >
                 <span className={formData.batteryId ? "text-evegah-text" : "text-gray-500"}>
-                  {formData.batteryId || "Select Battery ID"}
+                  {isDefaultBatteryModel ? "Default" : formData.batteryId || "Select Battery ID"}
                 </span>
                 <span className="text-gray-400">▾</span>
               </button>
 
-              {batteryDropdownOpen ? (
+              {batteryDropdownOpen && !isDefaultBatteryModel ? (
                 <div className="absolute z-20 mt-2 w-full rounded-xl border border-evegah-border bg-white shadow-card p-2">
                   <input
                     ref={batteryQueryRef}
@@ -559,7 +589,9 @@ export default function Step2Identity() {
                 </div>
               ) : null}
             </div>
-            {attempted && !isNonEmpty(formData.batteryId) ? (
+            {isDefaultBatteryModel ? (
+              <p className="text-xs text-gray-500 mt-1">Default (non-removable) battery.</p>
+            ) : attempted && !isNonEmpty(formData.batteryId) ? (
               <p className="error">Battery ID is required.</p>
             ) : attempted && unavailableBatterySet.has(normalizeIdForCompare(formData.batteryId)) ? (
               <p className="error">Selected battery is unavailable.</p>

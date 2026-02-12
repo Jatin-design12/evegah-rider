@@ -126,6 +126,9 @@ function RetainRiderInner() {
       .replace(/[^a-z0-9]+/gi, "")
       .toUpperCase();
 
+  const normalizeModel = (value) => String(value || "").trim().toLowerCase();
+  const isDefaultBatteryModel = DEFAULT_BATTERY_MODELS.has(normalizeModel(formData.bikeModel));
+
   const unavailableVehicleSet = useMemo(
     () => new Set((Array.isArray(unavailableVehicleIds) ? unavailableVehicleIds : []).map(normalizeIdForCompare).filter(Boolean)),
     [unavailableVehicleIds]
@@ -153,11 +156,33 @@ function RetainRiderInner() {
     };
   }, []);
 
+  useEffect(() => {
+    if (isDefaultBatteryModel) {
+      if (formData.batteryId !== "Default") {
+        updateForm({ batteryId: "Default" });
+      }
+      setBatteryDropdownOpen(false);
+      setBatteryQuery("");
+      return;
+    }
+
+    if (formData.batteryId === "Default") {
+      updateForm({ batteryId: "" });
+    }
+  }, [isDefaultBatteryModel, formData.batteryId, updateForm]);
+
   const selected = Boolean(formData.isRetainRider && formData.existingRiderId);
 
   const PACKAGE_OPTIONS = ["hourly", "daily", "weekly", "monthly"];
   const PAYMENT_OPTIONS = ["cash", "online", "split"];
   const BIKE_MODEL_OPTIONS = VEHICLE_MODEL_OPTIONS;
+  const DEFAULT_BATTERY_MODELS = new Set([
+    "paddle cycle",
+    "electric scooter",
+    "kids ev car",
+    "kids paddle scooter",
+    "double seat cycle",
+  ]);
   const ACCESSORY_OPTIONS = [
     { key: "mobile_holder", label: "Mobile holder" },
     { key: "mirror", label: "Mirror" },
@@ -692,7 +717,7 @@ function RetainRiderInner() {
         return;
       }
 
-      if (formData.batteryId && unavailableBatterySet.has(normalizeIdForCompare(formData.batteryId))) {
+      if (!isDefaultBatteryModel && formData.batteryId && unavailableBatterySet.has(normalizeIdForCompare(formData.batteryId))) {
         setPaymentError("Selected battery is unavailable.");
         return;
       }
@@ -1363,10 +1388,15 @@ function RetainRiderInner() {
                 <div ref={batteryDropdownRef} className="relative">
                   <button
                     type="button"
-                    className="select flex items-center justify-between gap-3"
+                    className={`select flex items-center justify-between gap-3 ${
+                      isDefaultBatteryModel ? "cursor-not-allowed bg-gray-100 text-gray-500" : ""
+                    }`}
                     aria-haspopup="listbox"
                     aria-expanded={batteryDropdownOpen}
+                    disabled={isDefaultBatteryModel}
+                    aria-disabled={isDefaultBatteryModel}
                     onClick={() => {
+                      if (isDefaultBatteryModel) return;
                       setBatteryDropdownOpen((v) => {
                         const next = !v;
                         if (!v && next) {
@@ -1377,12 +1407,12 @@ function RetainRiderInner() {
                     }}
                   >
                     <span className={formData.batteryId ? "text-evegah-text" : "text-gray-500"}>
-                      {formData.batteryId || "Select Battery ID"}
+                      {isDefaultBatteryModel ? "Default" : formData.batteryId || "Select Battery ID"}
                     </span>
                     <span className="text-gray-400">▾</span>
                   </button>
 
-                  {batteryDropdownOpen ? (
+                  {batteryDropdownOpen && !isDefaultBatteryModel ? (
                     <div className="absolute z-20 mt-2 w-full rounded-xl border border-evegah-border bg-white shadow-card p-2">
                       <input
                         ref={batteryQueryRef}
@@ -1437,6 +1467,9 @@ function RetainRiderInner() {
                     </div>
                   ) : null}
                 </div>
+                {isDefaultBatteryModel ? (
+                  <p className="text-xs text-gray-500 mt-1">Default (non-removable) battery.</p>
+                ) : null}
               </div>
               <div>
                 <label className="label">Accessories Issued</label>
