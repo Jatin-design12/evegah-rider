@@ -188,6 +188,10 @@ export default function RentalsTable() {
     if (cleaned.includes("karelibaug")) return "Karelibaug";
     if (cleaned.includes("daman")) return "Daman";
     if (cleaned.includes("aatapi") || cleaned.includes("atapi")) return "Aatapi";
+    if (cleaned.includes("waghodiya")) return "Waghodiya";
+    if (cleaned.includes("ajwa")) return "Ajwa Road";
+    if (cleaned.includes("chhani")) return "Chhani";
+    if (cleaned.includes("anand")) return "Anand";
     return "";
   };
 
@@ -215,6 +219,10 @@ export default function RentalsTable() {
     if (z.includes("karelibaug")) return "bg-amber-100 text-amber-700";
     if (z.includes("daman")) return "bg-sky-100 text-sky-700";
     if (z.includes("aatapi")) return "bg-rose-100 text-rose-700";
+    if (z.includes("waghodiya")) return "bg-indigo-100 text-indigo-700";
+    if (z.includes("ajwa")) return "bg-emerald-100 text-emerald-700";
+    if (z.includes("chhani")) return "bg-amber-100 text-amber-700";
+    if (z.includes("anand")) return "bg-sky-100 text-sky-700";
     return "bg-gray-100 text-gray-700";
   };
 

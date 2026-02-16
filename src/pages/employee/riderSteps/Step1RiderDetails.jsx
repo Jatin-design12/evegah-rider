@@ -561,6 +561,10 @@ export default function Step1RiderDetails() {
               <option>Karelibaug</option>
                 <option>Daman</option>
                 <option>Aatapi</option>
+              <option>Waghodiya</option>
+              <option>Ajwa Road</option>
+              <option>Chhani</option>
+              <option>Anand</option>
             </select>
           </div>
         </div>

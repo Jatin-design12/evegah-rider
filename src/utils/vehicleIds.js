@@ -109,6 +109,7 @@ export const VEHICLE_ID_GROUPS = [
       "EVM1025035",
       "EVM1025036",
       "EVM1025037",
+      "EVM1025038",
       "EVM1024001",
       "EVM1025026",
       "EVM1025027",

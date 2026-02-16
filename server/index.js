@@ -584,6 +584,10 @@ function normalizeZone(value) {
   if (cleaned.includes("karelibaug")) return "Karelibaug";
   if (cleaned.includes("daman")) return "Daman";
   if (cleaned.includes("aatapi") || cleaned.includes("atapi")) return "Aatapi";
+  if (cleaned.includes("waghodiya")) return "Waghodiya";
+  if (cleaned.includes("ajwa")) return "Ajwa Road";
+  if (cleaned.includes("chhani")) return "Chhani";
+  if (cleaned.includes("anand")) return "Anand";
   return "";
 }
 
@@ -4897,7 +4901,17 @@ app.get("/api/analytics/zone-distribution", async (_req, res) => {
 });
 
 app.get("/api/analytics/active-zone-counts", async (_req, res) => {
-  const ZONES = ["Gotri", "Manjalpur", "Karelibaug", "Daman", "Aatapi"];
+  const ZONES = [
+    "Gotri",
+    "Manjalpur",
+    "Karelibaug",
+    "Daman",
+    "Aatapi",
+    "Waghodiya",
+    "Ajwa Road",
+    "Chhani",
+    "Anand",
+  ];
   const next = Object.fromEntries(ZONES.map((z) => [z, 0]));
 
   try {
@@ -5216,6 +5230,33 @@ app.get("/api/dashboard/active-rentals", async (req, res) => {
        left join public.riders rd on rd.id = r.rider_id
        where not exists (select 1 from public.returns ret where ret.rental_id = r.id)
        order by r.start_time desc
+       limit $1`,
+      [limit]
+    );
+    res.json(rows || []);
+  } catch (error) {
+    res.status(500).json({ error: String(error?.message || error) });
+  }
+});
+
+app.get("/api/dashboard/recent-returns", async (req, res) => {
+  const limit = Math.min(50, Math.max(1, Number(req.query.limit || 5)));
+  try {
+    const { rows } = await pool.query(
+      `select
+         ret.id as return_id,
+         ret.rental_id,
+         ret.returned_at,
+         coalesce(ret.condition_notes,'') as condition_notes,
+         coalesce(ret.meta->>'feedback','') as feedback,
+         r.bike_id,
+         r.vehicle_number,
+         rd.full_name as rider_full_name,
+         rd.mobile as rider_mobile
+       from public.returns ret
+       left join public.rentals r on r.id = ret.rental_id
+       left join public.riders rd on rd.id = r.rider_id
+       order by ret.created_at desc
        limit $1`,
       [limit]
     );

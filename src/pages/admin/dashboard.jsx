@@ -28,6 +28,7 @@ export default function AdminDashboard() {
 
 	const [multiLayerData, setMultiLayerData] = useState([]);
 	const [returnsData, setReturnsData] = useState([]);
+	const [recentReturns, setRecentReturns] = useState([]);
 	const [rentalsByPackageData, setRentalsByPackageData] = useState([]);
 	const [rentalsByZoneData, setRentalsByZoneData] = useState([]);
 	const [timeRange, setTimeRange] = useState("6months");
@@ -49,6 +50,7 @@ export default function AdminDashboard() {
 					summary,
 					analyticsSeries,
 					returnsSeries,
+					recentReturnsRows,
 					packageSeries,
 					zoneSeries,
 				] =
@@ -56,6 +58,7 @@ export default function AdminDashboard() {
 						apiFetch("/api/dashboard/summary"),
 						apiFetch(`/api/dashboard/analytics-months?months=${timeRange === "weekly" ? 1 : timeRange === "monthly" ? 1 : 6}`),
 						apiFetch("/api/dashboard/returns-week"),
+						apiFetch("/api/dashboard/recent-returns?limit=5"),
 						apiFetch("/api/dashboard/rentals-by-package?days=30"),
 						apiFetch("/api/dashboard/rentals-by-zone?days=30"),
 					]);
@@ -71,6 +74,7 @@ export default function AdminDashboard() {
 
 				setMultiLayerData(Array.isArray(analyticsSeries) ? analyticsSeries : []);
 				setReturnsData(Array.isArray(returnsSeries) ? returnsSeries : []);
+				setRecentReturns(Array.isArray(recentReturnsRows) ? recentReturnsRows : []);
 				setRentalsByPackageData(Array.isArray(packageSeries) ? packageSeries : []);
 				setRentalsByZoneData(Array.isArray(zoneSeries) ? zoneSeries : []);
 			} catch (e) {
@@ -362,6 +366,69 @@ export default function AdminDashboard() {
 											</BarChart>
 										</ResponsiveContainer>
 									</div>
+								</div>
+							</div>
+
+							{/* Recent Returns (Condition + Feedback) */}
+							<div className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 shadow-xl border border-white/30 hover:shadow-2xl transition-all duration-300">
+								<div className="flex items-center justify-between gap-4 mb-4">
+									<div>
+										<h3 className="text-xl font-bold text-slate-800">Recent Returns</h3>
+										<p className="text-sm text-slate-600">Vehicle condition and rider feedback</p>
+									</div>
+									<span className="text-sm text-slate-500 bg-slate-100 px-3 py-1 rounded-full">Latest</span>
+								</div>
+
+								<div className="overflow-x-auto">
+									<table className="min-w-full text-sm">
+										<thead>
+											<tr className="text-left text-slate-600">
+												<th className="py-2 pr-4 font-semibold">Returned</th>
+												<th className="py-2 pr-4 font-semibold">Rider</th>
+												<th className="py-2 pr-4 font-semibold">Vehicle</th>
+												<th className="py-2 pr-4 font-semibold">Condition</th>
+												<th className="py-2 pr-4 font-semibold">Feedback</th>
+											</tr>
+										</thead>
+										<tbody>
+											{loading ? (
+												<tr>
+													<td className="py-3 pr-4 text-slate-500" colSpan={5}>
+														Loading recent returns...
+													</td>
+												</tr>
+											) : recentReturns.length === 0 ? (
+												<tr>
+													<td className="py-3 pr-4 text-slate-500" colSpan={5}>
+														No recent returns found.
+													</td>
+												</tr>
+											) : (
+												recentReturns.map((r) => (
+													<tr key={String(r?.return_id || r?.rental_id || "")} className="border-t border-slate-200/60">
+														<td className="py-3 pr-4 text-slate-700 whitespace-nowrap">
+															{r?.returned_at ? new Date(r.returned_at).toLocaleString() : "-"}
+														</td>
+														<td className="py-3 pr-4 text-slate-800 whitespace-nowrap">
+															{r?.rider_full_name || "-"}
+															{r?.rider_mobile ? (
+																<div className="text-xs text-slate-500">{r.rider_mobile}</div>
+															) : null}
+														</td>
+														<td className="py-3 pr-4 text-slate-700 whitespace-nowrap">
+															{r?.bike_id || r?.vehicle_number || "-"}
+														</td>
+														<td className="py-3 pr-4 text-slate-700">
+															{r?.condition_notes ? String(r.condition_notes) : "-"}
+														</td>
+														<td className="py-3 pr-4 text-slate-700">
+															{r?.feedback ? String(r.feedback) : "-"}
+														</td>
+													</tr>
+												))
+											)}
+										</tbody>
+									</table>
 								</div>
 							</div>
 						</div>

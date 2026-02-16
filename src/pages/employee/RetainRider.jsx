@@ -129,6 +129,7 @@ function RetainRiderInner() {
   const normalizeModel = (value) => String(value || "").trim().toLowerCase();
   const DEFAULT_BATTERY_MODELS = new Set([
     "paddle cycle",
+    "electric cycle",
     "electric scooter",
     "kids ev car",
     "kids paddle scooter",
@@ -1156,11 +1157,18 @@ function RetainRiderInner() {
                   value={formData.operationalZone || ""}
                   onChange={(e) => updateForm({ operationalZone: e.target.value })}
                 >
-                  <option>Gotri Zone</option>
-                  <option>Manjalpur</option>
-                  <option>Karelibaug</option>
-                  <option>Daman</option>
                   <option>Aatapi</option>
+                  <option>Ajwa Road</option>
+                  <option>Anand</option>
+                  <option>Chhani</option>
+                  <option>Daman</option>
+                  <option>Gotri Zone</option>
+                  <option>Karelibaug</option>
+                  <option>Manjalpur</option>
+                  <option>Waghodiya</option>
+        
+        
+                  
                 </select>
               </div>
             </div>

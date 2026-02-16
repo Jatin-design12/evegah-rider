@@ -83,10 +83,38 @@ export default function RidersTable() {
   const loadRiders = useCallback(async () => {
     setLoading(true);
 
-    const res = await apiFetch("/api/riders");
+    try {
+      const pageLimit = 100; // server caps at 100
+      const nextRows = [];
+      let nextPage = 1;
+      let totalCount = null;
 
-    setRiders(res?.data || []);
-    setLoading(false);
+      // Fetch all pages so client-side search/sort/pagination operate on the full dataset.
+      // Safety guard to avoid infinite loops if the API misbehaves.
+      const maxPages = 2000;
+
+      while (nextPage <= maxPages) {
+        const res = await apiFetch(`/api/riders?page=${nextPage}&limit=${pageLimit}`);
+        const rows = Array.isArray(res?.data) ? res.data : [];
+
+        if (totalCount === null) {
+          totalCount = Number(res?.totalCount);
+          if (!Number.isFinite(totalCount) || totalCount < 0) totalCount = null;
+        }
+
+        nextRows.push(...rows);
+
+        if (rows.length === 0) break;
+        if (totalCount !== null && nextRows.length >= totalCount) break;
+        if (rows.length < pageLimit) break;
+
+        nextPage += 1;
+      }
+
+      setRiders(nextRows);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   /* ===================== EFFECTS ===================== */

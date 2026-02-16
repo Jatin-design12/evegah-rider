@@ -55,6 +55,7 @@ export default function Step2Identity() {
   const BIKE_MODEL_OPTIONS = VEHICLE_MODEL_OPTIONS;
   const DEFAULT_BATTERY_MODELS = new Set([
     "paddle cycle",
+    "electric cycle",
     "electric scooter",
     "kids ev car",
     "kids paddle scooter",

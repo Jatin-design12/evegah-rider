@@ -39,6 +39,10 @@ export default function RiderProfileModal({ rider, close }) {
     if (cleaned.includes("karelibaug")) return "Karelibaug";
     if (cleaned.includes("daman")) return "Daman";
     if (cleaned.includes("aatapi") || cleaned.includes("atapi")) return "Aatapi";
+    if (cleaned.includes("waghodiya")) return "Waghodiya";
+    if (cleaned.includes("ajwa")) return "Ajwa Road";
+    if (cleaned.includes("chhani")) return "Chhani";
+    if (cleaned.includes("anand")) return "Anand";
     return "";
   };
 
