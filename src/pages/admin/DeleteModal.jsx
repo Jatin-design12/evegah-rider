@@ -12,10 +12,21 @@ export default function DeleteModal({ rider, bulkIds = [], close, reload, onBulk
     setError("");
     try {
       if (isBulk) {
-        await apiFetch("/api/riders/bulk-delete", {
-          method: "POST",
-          body: { ids: bulkIds },
-        });
+        try {
+          await apiFetch("/api/riders/bulk-delete", {
+            method: "POST",
+            body: { ids: bulkIds },
+          });
+        } catch (bulkError) {
+          // Fallback for older production backends where bulk-delete may be missing or broken.
+          // Delete riders one-by-one using the existing single-delete endpoint.
+          for (const id of bulkIds) {
+            if (!id) continue;
+            await apiFetch(`/api/riders/${encodeURIComponent(id)}`, {
+              method: "DELETE",
+            });
+          }
+        }
       } else if (rider && rider.id) {
         await apiFetch(`/api/riders/${encodeURIComponent(rider.id)}`, {
           method: "DELETE",

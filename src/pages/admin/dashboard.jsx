@@ -42,6 +42,17 @@ export default function AdminDashboard() {
 	useEffect(() => {
 		let mounted = true;
 
+		const parseMaybeJson = (value) => {
+			if (!value) return null;
+			if (typeof value === "object") return value;
+			if (typeof value !== "string") return null;
+			try {
+				return JSON.parse(value);
+			} catch {
+				return null;
+			}
+		};
+
 		const load = async () => {
 			setLoading(true);
 			setError("");
@@ -50,7 +61,7 @@ export default function AdminDashboard() {
 					summary,
 					analyticsSeries,
 					returnsSeries,
-					recentReturnsRows,
+					returnsRows,
 					packageSeries,
 					zoneSeries,
 				] =
@@ -58,7 +69,7 @@ export default function AdminDashboard() {
 						apiFetch("/api/dashboard/summary"),
 						apiFetch(`/api/dashboard/analytics-months?months=${timeRange === "weekly" ? 1 : timeRange === "monthly" ? 1 : 6}`),
 						apiFetch("/api/dashboard/returns-week"),
-						apiFetch("/api/dashboard/recent-returns?limit=5"),
+						apiFetch("/api/returns"),
 						apiFetch("/api/dashboard/rentals-by-package?days=30"),
 						apiFetch("/api/dashboard/rentals-by-zone?days=30"),
 					]);
@@ -74,7 +85,24 @@ export default function AdminDashboard() {
 
 				setMultiLayerData(Array.isArray(analyticsSeries) ? analyticsSeries : []);
 				setReturnsData(Array.isArray(returnsSeries) ? returnsSeries : []);
-				setRecentReturns(Array.isArray(recentReturnsRows) ? recentReturnsRows : []);
+
+				const list = Array.isArray(returnsRows) ? returnsRows : [];
+				const mapped = list.slice(0, 5).map((r) => {
+					const meta = parseMaybeJson(r?.return_meta) || r?.return_meta || {};
+					const feedback = meta && typeof meta === "object" ? meta.feedback : "";
+					return {
+						return_id: r?.return_id,
+						rental_id: r?.rental_id,
+						returned_at: r?.returned_at,
+						condition_notes: r?.condition_notes,
+						feedback: feedback || "",
+						bike_id: r?.bike_id,
+						vehicle_number: r?.vehicle_number,
+						rider_full_name: r?.rider_full_name,
+						rider_mobile: r?.rider_mobile,
+					};
+				});
+				setRecentReturns(mapped);
 				setRentalsByPackageData(Array.isArray(packageSeries) ? packageSeries : []);
 				setRentalsByZoneData(Array.isArray(zoneSeries) ? zoneSeries : []);
 			} catch (e) {
