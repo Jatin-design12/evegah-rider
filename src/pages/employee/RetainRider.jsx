@@ -130,6 +130,7 @@ function RetainRiderInner() {
   const DEFAULT_BATTERY_MODELS = new Set([
     "paddle cycle",
     "electric cycle",
+    "ev kick scooter",
     "electric scooter",
     "kids ev car",
     "kids paddle scooter",
