@@ -127,6 +127,13 @@ function RetainRiderInner() {
       .toUpperCase();
 
   const normalizeModel = (value) => String(value || "").trim().toLowerCase();
+  const DEFAULT_BATTERY_MODELS = new Set([
+    "paddle cycle",
+    "electric scooter",
+    "kids ev car",
+    "kids paddle scooter",
+    "double seat cycle",
+  ]);
   const isDefaultBatteryModel = DEFAULT_BATTERY_MODELS.has(normalizeModel(formData.bikeModel));
 
   const unavailableVehicleSet = useMemo(
@@ -176,13 +183,6 @@ function RetainRiderInner() {
   const PACKAGE_OPTIONS = ["hourly", "daily", "weekly", "monthly"];
   const PAYMENT_OPTIONS = ["cash", "online", "split"];
   const BIKE_MODEL_OPTIONS = VEHICLE_MODEL_OPTIONS;
-  const DEFAULT_BATTERY_MODELS = new Set([
-    "paddle cycle",
-    "electric scooter",
-    "kids ev car",
-    "kids paddle scooter",
-    "double seat cycle",
-  ]);
   const ACCESSORY_OPTIONS = [
     { key: "mobile_holder", label: "Mobile holder" },
     { key: "mirror", label: "Mirror" },
