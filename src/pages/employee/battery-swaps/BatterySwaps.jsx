@@ -1113,7 +1113,7 @@ export default function BatterySwaps() {
             </div>
           </div>
 
-          <div className="xl:col-span-7 space-y-4">
+          <div className="xl:col-span-12 space-y-4">
             <div className="card border-0 bg-white shadow-card">
               <div className="flex items-start justify-between gap-4">
                 <div>

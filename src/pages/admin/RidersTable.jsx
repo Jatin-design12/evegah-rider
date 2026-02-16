@@ -33,6 +33,7 @@ export default function RidersTable() {
 
   // Bulk select
   const [selected, setSelected] = useState([]);
+  const selectAllRef = useRef(null);
 
   // Filter/sort
   const [search, setSearch] = useState("");
@@ -270,6 +271,33 @@ export default function RidersTable() {
     const start = (page - 1) * pageSize;
     return sortedRows.slice(start, start + pageSize);
   }, [sortedRows, page]);
+
+  const pageRowIds = useMemo(() => pageRows.map((r) => r.id).filter(Boolean), [pageRows]);
+  const selectedOnPageCount = useMemo(
+    () => pageRowIds.reduce((sum, id) => sum + (selected.includes(id) ? 1 : 0), 0),
+    [pageRowIds, selected]
+  );
+  const allOnPageSelected = pageRowIds.length > 0 && selectedOnPageCount === pageRowIds.length;
+  const someOnPageSelected = selectedOnPageCount > 0 && selectedOnPageCount < pageRowIds.length;
+
+  useEffect(() => {
+    const el = selectAllRef.current;
+    if (!el) return;
+    el.indeterminate = someOnPageSelected;
+  }, [someOnPageSelected]);
+
+  const toggleSelectAllOnPage = () => {
+    if (pageRowIds.length === 0) return;
+    setSelected((prev) => {
+      const prevSet = new Set(prev);
+      if (allOnPageSelected) {
+        pageRowIds.forEach((id) => prevSet.delete(id));
+      } else {
+        pageRowIds.forEach((id) => prevSet.add(id));
+      }
+      return Array.from(prevSet);
+    });
+  };
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
@@ -619,7 +647,15 @@ export default function RidersTable() {
                 <table className="w-full text-sm font-medium">
                   <thead className="bg-slate-100">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700" />
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">
+                        <input
+                          ref={selectAllRef}
+                          type="checkbox"
+                          checked={allOnPageSelected}
+                          onChange={toggleSelectAllOnPage}
+                          aria-label="Select all rows on this page"
+                        />
+                      </th>
                       {visibleCols.full_name ? renderSortableTh({ label: "Name", sortKey: "full_name" }) : null}
                       {visibleCols.mobile ? renderSortableTh({ label: "Mobile", sortKey: "mobile" }) : null}
                       {visibleCols.aadhaar ? renderSortableTh({ label: "Aadhaar", sortKey: "aadhaar" }) : null}

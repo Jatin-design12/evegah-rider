@@ -2941,9 +2941,20 @@ app.get("/api/riders/stats", async (_req, res) => {
          from public.returns`
       ),
       pool.query(
-        `select count(distinct r.rider_id)::int as count
-         from public.rentals r
-         where exists (select 1 from public.returns rt where rt.rental_id = r.id)`
+        `select count(*)::int as count
+         from public.riders rd
+         where not exists (
+           select 1
+           from public.rentals r
+           where r.rider_id = rd.id
+             and not exists (select 1 from public.returns rt where rt.rental_id = r.id)
+         )
+           and exists (
+             select 1
+             from public.rentals r
+             where r.rider_id = rd.id
+               and exists (select 1 from public.returns rt where rt.rental_id = r.id)
+           )`
       ),
     ]);
 
@@ -3073,7 +3084,7 @@ app.post("/api/riders/bulk-delete", async (req, res) => {
              from public.returns rt
              where rt.rental_id = r.id
            ) ret on true
-           where r.rider_id = any($1::text[])
+           where r.rider_id = any($1::uuid[])
              and regexp_replace(lower(coalesce(r.vehicle_number,'')),'[^a-z0-9]+','','g') =
                  regexp_replace(lower(coalesce(s.vehicle_number,'')),'[^a-z0-9]+','','g')
              and r.start_time <= coalesce(s.swapped_at, s.created_at)
@@ -3083,7 +3094,7 @@ app.post("/api/riders/bulk-delete", async (req, res) => {
       );
 
       const { rowCount } = await client.query(
-        `delete from public.riders where id = any($1::text[])`,
+        `delete from public.riders where id = any($1::uuid[])`,
         [ids]
       );
 

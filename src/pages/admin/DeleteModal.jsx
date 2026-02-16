@@ -1,24 +1,36 @@
+import { useState } from "react";
 import { apiFetch } from "../../config/api";
 
 export default function DeleteModal({ rider, bulkIds = [], close, reload, onBulkSuccess }) {
   const isBulk = Array.isArray(bulkIds) && bulkIds.length > 0;
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState("");
 
   async function deleteRider() {
-    if (isBulk) {
-      await apiFetch("/api/riders/bulk-delete", {
-        method: "POST",
-        body: { ids: bulkIds },
-      });
-    } else if (rider && rider.id) {
-      await apiFetch(`/api/riders/${encodeURIComponent(rider.id)}`, {
-        method: "DELETE",
-      });
+    if (deleting) return;
+    setDeleting(true);
+    setError("");
+    try {
+      if (isBulk) {
+        await apiFetch("/api/riders/bulk-delete", {
+          method: "POST",
+          body: { ids: bulkIds },
+        });
+      } else if (rider && rider.id) {
+        await apiFetch(`/api/riders/${encodeURIComponent(rider.id)}`, {
+          method: "DELETE",
+        });
+      }
+      reload();
+      if (isBulk && typeof onBulkSuccess === "function") {
+        onBulkSuccess();
+      }
+      close();
+    } catch (e) {
+      setError(String(e?.message || e || "Unable to delete"));
+    } finally {
+      setDeleting(false);
     }
-    reload();
-    if (isBulk && typeof onBulkSuccess === "function") {
-      onBulkSuccess();
-    }
-    close();
   }
 
   return (
@@ -39,15 +51,22 @@ export default function DeleteModal({ rider, bulkIds = [], close, reload, onBulk
           )}
         </p>
 
+      {error ? (
+        <div className="mb-4 rounded-lg bg-red-50 text-red-700 border border-red-200 px-3 py-2 text-sm text-left">
+          {error}
+        </div>
+      ) : null}
+
         <div className="flex justify-center gap-3">
-          <button onClick={close} className="px-4 py-2 bg-gray-200 rounded">
+          <button onClick={close} disabled={deleting} className="px-4 py-2 bg-gray-200 rounded disabled:opacity-60">
             Cancel
           </button>
           <button
             onClick={deleteRider}
-            className="px-4 py-2 bg-red-600 text-white rounded"
+            disabled={deleting}
+            className="px-4 py-2 bg-red-600 text-white rounded disabled:opacity-60"
           >
-            Delete
+			{deleting ? "Deleting…" : "Delete"}
           </button>
         </div>
       </div>
