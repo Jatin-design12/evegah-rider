@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import AdminSidebar from "../../components/admin/AdminSidebar";
-import { apiFetch } from "../../config/api";
+import { apiFetch, apiFetchBlob } from "../../config/api";
 
 import EditRiderModal from "./EditRiderModal";
 import DeleteModal from "./DeleteModal";
 import RiderProfileModal from "./RiderProfileModal";
 
 import { formatDateDDMMYYYY } from "../../utils/dateFormat";
-import { Eye, Edit, Trash2, Users, Bike, UserCheck, UserX, Search, RefreshCw, Download, FileText, Columns } from "lucide-react";
+import { Eye, Edit, Trash2, Users, Bike, UserCheck, UserX, Search, RefreshCw, Download, FileText, Columns, Upload } from "lucide-react";
 import { downloadCsv } from "../../utils/downloadCsv";
 import { sortRows, toggleSort } from "../../utils/sortRows";
 import jsPDF from "jspdf";
@@ -18,6 +18,8 @@ export default function RidersTable() {
   const COLUMNS_SCROLL_STORAGE_KEY = "evegah.admin.riders.columnsDropdownScrollTop.v1";
   const columnsWrapRef = useRef(null);
   const columnsListRef = useRef(null);
+  const importArchiveInputRef = useRef(null);
+  const transferMenuRef = useRef(null);
 
   const [riders, setRiders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -70,6 +72,10 @@ export default function RidersTable() {
   const [editItem, setEditItem] = useState(null);
   const [deleteItem, setDeleteItem] = useState(null);
   const [viewItem, setViewItem] = useState(null);
+  const [profilesBusy, setProfilesBusy] = useState(false);
+  const [profilesNotice, setProfilesNotice] = useState("");
+  const [profilesError, setProfilesError] = useState("");
+  const [transferMenuOpen, setTransferMenuOpen] = useState(false);
 
   /* ===================== API ===================== */
 
@@ -162,26 +168,40 @@ export default function RidersTable() {
       if (el.contains(e.target)) return;
       setColumnsOpen(false);
     };
+    const onTransferPointerDown = (e) => {
+      if (!transferMenuOpen) return;
+      const el = transferMenuRef.current;
+      if (!el) return;
+      if (el.contains(e.target)) return;
+      setTransferMenuOpen(false);
+    };
     const onKeyDown = (e) => {
       if (!columnsOpen) return;
       if (e.key === "Escape") setColumnsOpen(false);
+      if (e.key === "Escape") setTransferMenuOpen(false);
     };
     const onVisibility = () => {
       if (document.hidden) setColumnsOpen(false);
+      if (document.hidden) setTransferMenuOpen(false);
     };
-    const onBlur = () => setColumnsOpen(false);
+    const onBlur = () => {
+      setColumnsOpen(false);
+      setTransferMenuOpen(false);
+    };
 
     document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("mousedown", onTransferPointerDown);
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("blur", onBlur);
     return () => {
       document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("mousedown", onTransferPointerDown);
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("blur", onBlur);
     };
-  }, [columnsOpen]);
+  }, [columnsOpen, transferMenuOpen]);
 
   useEffect(() => {
     if (!columnsOpen) return;
@@ -352,6 +372,96 @@ export default function RidersTable() {
     doc.save("riders-report.pdf");
   };
 
+  const parseDownloadFileName = (contentDisposition, fallback) => {
+    const source = String(contentDisposition || "");
+    const utf8Match = source.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match?.[1]) {
+      try {
+        return decodeURIComponent(utf8Match[1]);
+      } catch {
+        return utf8Match[1];
+      }
+    }
+    const basicMatch = source.match(/filename="?([^";]+)"?/i);
+    return basicMatch?.[1] || fallback;
+  };
+
+  const downloadBlobToFile = (blob, fileName) => {
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = href;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 5000);
+  };
+
+  const exportProfilesArchive = useCallback(async ({ riderIds, fallbackName, emptyMessage }) => {
+    const ids = Array.isArray(riderIds) ? riderIds.filter(Boolean) : [];
+    if (ids.length === 0) {
+      setProfilesError(emptyMessage || "No riders available for export.");
+      setProfilesNotice("");
+      return;
+    }
+
+    setProfilesBusy(true);
+    setProfilesError("");
+    setProfilesNotice("");
+
+    try {
+      const { blob, contentDisposition } = await apiFetchBlob("/api/riders/export-profiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ riderIds: ids }),
+      });
+      const name = parseDownloadFileName(contentDisposition, fallbackName || "rider-profiles.zip");
+      downloadBlobToFile(blob, name);
+      setProfilesNotice(`Exported ${ids.length} profile${ids.length > 1 ? "s" : ""} as ZIP.`);
+    } catch (e) {
+      setProfilesError(String(e?.message || e || "Unable to export rider profiles."));
+    } finally {
+      setProfilesBusy(false);
+    }
+  }, []);
+
+  const handleImportProfilesClick = () => {
+    if (profilesBusy) return;
+    importArchiveInputRef.current?.click();
+  };
+
+  const handleImportProfiles = async (event) => {
+    const input = event.currentTarget;
+    const file = input.files?.[0] || null;
+    input.value = "";
+    if (!file) return;
+
+    setProfilesBusy(true);
+    setProfilesError("");
+    setProfilesNotice("");
+
+    try {
+      const formData = new FormData();
+      formData.append("archive", file);
+      const result = await apiFetch("/api/riders/import-profiles", {
+        method: "POST",
+        body: formData,
+      });
+
+      await Promise.all([loadStats(), loadRiders()]);
+
+      const failedCount = Number(result?.failedRiders?.length || 0);
+      const imported = Number(result?.ridersImported || 0);
+      setProfilesNotice(
+        `Imported ${imported} rider profile${imported !== 1 ? "s" : ""}${failedCount ? ` (${failedCount} failed)` : ""}.`
+      );
+    } catch (e) {
+      setProfilesError(String(e?.message || e || "Unable to import rider profiles."));
+    } finally {
+      setProfilesBusy(false);
+    }
+  };
+
   const handleRefresh = () => {
     loadStats();
     loadRiders();
@@ -442,6 +552,14 @@ export default function RidersTable() {
               </div>
 
               <div className="flex flex-wrap items-center justify-end gap-2">
+                <input
+                  ref={importArchiveInputRef}
+                  type="file"
+                  accept=".zip,application/zip"
+                  className="hidden"
+                  onChange={handleImportProfiles}
+                />
+
                 <label className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/70 backdrop-blur border border-white/30 shadow-sm text-sm font-semibold text-slate-700">
                   <input
                     type="checkbox"
@@ -475,6 +593,48 @@ export default function RidersTable() {
                   <span className="sm:hidden">CSV</span>
                 </button>
 
+                <div ref={transferMenuRef} className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setTransferMenuOpen((v) => !v)}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-sm font-semibold shadow-lg hover:opacity-95 disabled:opacity-60"
+                    disabled={profilesBusy}
+                    title="Import/Export Profiles"
+                  >
+                    <Upload size={16} />
+                    <span>Import/Export</span>
+                  </button>
+
+                  {transferMenuOpen ? (
+                    <div className="absolute right-0 z-[2200] mt-2 w-60 rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTransferMenuOpen(false);
+                          exportProfilesArchive({
+                            riderIds: (riders || []).filter((r) => selected.includes(r.id)).map((r) => r.id),
+                            fallbackName: `rider-profiles-selected-${new Date().toISOString().slice(0, 10)}.zip`,
+                            emptyMessage: "Select riders first, then export.",
+                          });
+                        }}
+                        className="w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100"
+                      >
+                        Export Selected Profiles
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTransferMenuOpen(false);
+                          handleImportProfilesClick();
+                        }}
+                        className="mt-1 w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100"
+                      >
+                        Import Profiles ZIP
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+
                 <button
                   type="button"
                   onClick={exportPDF}
@@ -487,6 +647,18 @@ export default function RidersTable() {
                 </button>
               </div>
             </div>
+
+            {profilesError ? (
+              <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-700">
+                {profilesError}
+              </div>
+            ) : null}
+
+            {profilesNotice ? (
+              <div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+                {profilesNotice}
+              </div>
+            ) : null}
             
             {/* SUMMARY */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -621,7 +793,7 @@ export default function RidersTable() {
                   onClick={exportSelected}
                   className="px-4 py-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-semibold shadow-lg hover:opacity-95"
                 >
-                  Export
+                  Export CSV
                 </button>
                 <button
                   type="button"
@@ -705,6 +877,20 @@ export default function RidersTable() {
                         ) : null}
                         {visibleCols.actions ? (
                           <td className="p-4 flex gap-2">
+                            <button
+                              onClick={() =>
+                                exportProfilesArchive({
+                                  riderIds: [r.id],
+                                  fallbackName: `rider-profile-${String(r.full_name || r.id || "rider").replace(/\s+/g, "-")}.zip`,
+                                  emptyMessage: "Rider not available for profile export.",
+                                })
+                              }
+                              disabled={profilesBusy}
+                              className="p-2 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors disabled:opacity-60"
+                              title="Export Profile ZIP"
+                            >
+                              <Download size={16} />
+                            </button>
                             <button
                               onClick={() => setViewItem(r)}
                               className="p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"

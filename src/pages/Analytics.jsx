@@ -29,6 +29,7 @@ export default function Analytics() {
   const [csvDataset, setCsvDataset] = useState("rides");
   const [days, setDays] = useState(14);
   const [date, setDate] = useState("");
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const {
     ridersData,
@@ -58,40 +59,126 @@ export default function Analytics() {
   }, [activeZoneCounts]);
 
   async function exportPDF() {
-    const doc = new jsPDF();
-    doc.setFontSize(18);
-    doc.text("EVegah – Analytics Report", 14, 20);
+    if (exportingPdf) return;
+    setExportingPdf(true);
 
-    autoTable(doc, {
-      startY: 30,
-      head: [["Metric", "Value"]],
-      body: [
-        ["Total Riders", totalRiders],
-        ["Active Riders", activeRiders],
-        ["Suspended Riders", suspendedRiders],
-        ["Total Rides", totalRides],
-      ],
+    const sleepForRender = () => new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
     });
 
-    const chartIds = [
-      "ridesChart",
-      "earningsChart",
-      "zoneChart",
-      "activeZoneChart",
-      "statusChart",
-    ];
-    let y = doc.lastAutoTable.finalY + 10;
+    const addCanvasAcrossPages = ({ doc, canvas, marginMm = 14 }) => {
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const contentWidthMm = pageWidth - marginMm * 2;
+      const contentHeightMm = pageHeight - marginMm * 2;
+      if (contentWidthMm <= 0 || contentHeightMm <= 0 || canvas.width <= 0 || canvas.height <= 0) return;
 
-    for (const id of chartIds) {
-      const el = document.getElementById(id);
-      if (!el) continue;
-      const canvas = await html2canvas(el, { scale: 2 });
-      const img = canvas.toDataURL("image/png");
-      doc.addImage(img, "PNG", 15, y, 180, 80);
-      y += 90;
+      const pxPerMm = canvas.width / contentWidthMm;
+      const pageSliceHeightPx = Math.max(1, Math.floor(contentHeightMm * pxPerMm));
+
+      let offsetY = 0;
+      let firstSlice = true;
+
+      while (offsetY < canvas.height) {
+        const sliceHeightPx = Math.min(pageSliceHeightPx, canvas.height - offsetY);
+        const sliceCanvas = document.createElement("canvas");
+        sliceCanvas.width = canvas.width;
+        sliceCanvas.height = sliceHeightPx;
+
+        const ctx = sliceCanvas.getContext("2d");
+        if (!ctx) break;
+
+        ctx.drawImage(
+          canvas,
+          0,
+          offsetY,
+          canvas.width,
+          sliceHeightPx,
+          0,
+          0,
+          canvas.width,
+          sliceHeightPx
+        );
+
+        if (!firstSlice) doc.addPage();
+        firstSlice = false;
+
+        const sliceHeightMm = sliceHeightPx / pxPerMm;
+        doc.addImage(sliceCanvas.toDataURL("image/png"), "PNG", marginMm, marginMm, contentWidthMm, sliceHeightMm);
+
+        offsetY += sliceHeightPx;
+      }
+    };
+
+    try {
+      await sleepForRender();
+
+      const doc = new jsPDF("p", "mm", "a4");
+      doc.setFontSize(18);
+      doc.text("EVegah – Analytics Report", 14, 20);
+
+      autoTable(doc, {
+        startY: 30,
+        head: [["Metric", "Value"]],
+        body: [
+          ["Total Riders", totalRiders],
+          ["Active Riders", activeRiders],
+          ["Suspended Riders", suspendedRiders],
+          ["Total Rides", totalRides],
+          ["Earnings", `₹${Math.round(totalEarnings).toLocaleString()}`],
+          ["Avg rides / day", avgRidesPerDay],
+        ],
+      });
+
+      const sectionIds = [
+        "analyticsHeaderSection",
+        "analyticsKpiSection",
+        "ridesChart",
+        "zoneChart",
+        "earningsChart",
+        "statusChart",
+        "activeZoneChart",
+      ];
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const marginMm = 14;
+      const contentWidthMm = pageWidth - marginMm * 2;
+      const maxSectionHeightMm = pageHeight - marginMm * 2;
+
+      let currentY = (doc.lastAutoTable?.finalY || 34) + 8;
+
+      for (const id of sectionIds) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+
+        const canvas = await html2canvas(el, {
+          backgroundColor: "#ffffff",
+          useCORS: true,
+          scale: Math.max(2, Math.min(3, window.devicePixelRatio || 2)),
+          logging: false,
+        });
+
+        const sectionHeightMm = (canvas.height * contentWidthMm) / canvas.width;
+
+        if (sectionHeightMm <= maxSectionHeightMm) {
+          if (currentY + sectionHeightMm > pageHeight - marginMm) {
+            doc.addPage();
+            currentY = marginMm;
+          }
+          doc.addImage(canvas.toDataURL("image/png"), "PNG", marginMm, currentY, contentWidthMm, sectionHeightMm);
+          currentY += sectionHeightMm + 6;
+        } else {
+          doc.addPage();
+          addCanvasAcrossPages({ doc, canvas, marginMm });
+          currentY = pageHeight;
+        }
+      }
+
+      doc.save("analytics-report.pdf");
+    } finally {
+      setExportingPdf(false);
     }
-
-    doc.save("analytics-report.pdf");
   }
 
   const exportCSV = () => {
@@ -150,7 +237,7 @@ export default function Analytics() {
         <AdminSidebar />
         <main className="flex-1 w-full min-w-0 overflow-y-auto relative z-10 p-8 pb-0 overflow-x-hidden sm:ml-[var(--admin-sidebar-width,16rem)]">
           <div className="space-y-6">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div id="analyticsHeaderSection" className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <h1 className="text-3xl sm:text-3xl font-bold text-slate-900 tracking-tight">
                   Analytics Dashboard
@@ -203,9 +290,10 @@ export default function Analytics() {
 
                 <button
                   onClick={exportPDF}
-                  className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-600 text-white text-sm font-semibold shadow-lg hover:opacity-95"
+                  disabled={exportingPdf}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-2xl bg-gradient-to-r from-rose-500 to-pink-600 text-white text-sm font-semibold shadow-lg hover:opacity-95 disabled:opacity-60"
                 >
-                  Export PDF
+                  {exportingPdf ? "Exporting…" : "Export PDF"}
                 </button>
 
                 <select
@@ -249,7 +337,7 @@ export default function Analytics() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+            <div id="analyticsKpiSection" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
               <Kpi title="Total Riders" value={totalRiders} />
               <Kpi title="Active Riders" value={activeRiders} green />
               <Kpi title="Suspended Riders" value={suspendedRiders} red />

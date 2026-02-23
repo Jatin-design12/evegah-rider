@@ -98,6 +98,8 @@ export default function BatterySwaps() {
 
   const [errors, setErrors] = useState({});
   const [banner, setBanner] = useState(null);
+  const [activeVehicleIds, setActiveVehicleIds] = useState([]);
+  const [unavailableBatteryIds, setUnavailableBatteryIds] = useState([]);
 
   const riderDropdownRef = useRef(null);
   const riderQueryRef = useRef(null);
@@ -123,6 +125,14 @@ export default function BatterySwaps() {
   const [batteryInQuery, setBatteryInQuery] = useState("");
 
   const canLoad = useMemo(() => !loading && Boolean(user?.uid), [loading, user?.uid]);
+  const activeVehicleSet = useMemo(
+    () => new Set((Array.isArray(activeVehicleIds) ? activeVehicleIds : []).map(normalizeForCompare).filter(Boolean)),
+    [activeVehicleIds]
+  );
+  const unavailableBatterySet = useMemo(
+    () => new Set((Array.isArray(unavailableBatteryIds) ? unavailableBatteryIds : []).map(normalizeForCompare).filter(Boolean)),
+    [unavailableBatteryIds]
+  );
 
   const usageChartRows = useMemo(() => {
     const q = String(usageQuery || "").trim().toUpperCase();
@@ -392,7 +402,16 @@ export default function BatterySwaps() {
   ]);
 
   const filteredVehicleGroups = useMemo(() => filterVehicleIdGroups(vehicleQuery), [vehicleQuery]);
-  const filteredVehicleIds = useMemo(() => flattenVehicleIdGroups(filteredVehicleGroups), [filteredVehicleGroups]);
+  const activeOnlyVehicleGroups = useMemo(() => {
+    if (!activeVehicleSet.size) return filteredVehicleGroups;
+    return (filteredVehicleGroups || [])
+      .map((group) => ({
+        ...group,
+        ids: (Array.isArray(group?.ids) ? group.ids : []).filter((id) => activeVehicleSet.has(normalizeForCompare(id))),
+      }))
+      .filter((group) => Array.isArray(group.ids) && group.ids.length > 0);
+  }, [filteredVehicleGroups, activeVehicleSet]);
+  const filteredVehicleIds = useMemo(() => flattenVehicleIdGroups(activeOnlyVehicleGroups), [activeOnlyVehicleGroups]);
 
   const filteredBatteryOutIds = useMemo(() => {
     const query = String(batteryOutQuery || "").trim().toUpperCase();
@@ -402,9 +421,16 @@ export default function BatterySwaps() {
 
   const filteredBatteryInIds = useMemo(() => {
     const query = String(batteryInQuery || "").trim().toUpperCase();
-    if (!query) return BATTERY_ID_OPTIONS;
-    return BATTERY_ID_OPTIONS.filter((id) => id.includes(query));
-  }, [batteryInQuery]);
+    const currentOut = normalizeForCompare(form.batteryOut);
+    const availableIds = BATTERY_ID_OPTIONS.filter((id) => {
+      const normalized = normalizeForCompare(id);
+      if (!normalized) return false;
+      if (normalized === currentOut) return false;
+      return !unavailableBatterySet.has(normalized);
+    });
+    if (!query) return availableIds;
+    return availableIds.filter((id) => id.includes(query));
+  }, [batteryInQuery, form.batteryOut, unavailableBatterySet]);
 
   const filteredRiders = useMemo(() => {
     const query = String(riderQuery || "").trim().toLowerCase();
@@ -460,6 +486,16 @@ export default function BatterySwaps() {
     setForm((prev) => ({ ...prev, vehicleNumber: id }));
     setVehicleDropdownOpen(false);
     setVehicleQuery("");
+
+    apiFetch(`/api/rentals/active?vehicle=${encodeURIComponent(id)}`)
+      .then((active) => {
+        const batteryOut = normalizeId(active?.current_battery_id || active?.battery_id || "");
+        if (!batteryOut) return;
+        setForm((prev) => ({ ...prev, batteryOut }));
+      })
+      .catch(() => {
+        // ignore
+      });
   };
 
   const selectBatteryOutId = (id) => {
@@ -498,11 +534,38 @@ export default function BatterySwaps() {
     }
   };
 
+  const loadLiveAvailability = async () => {
+    try {
+      const data = await apiFetch("/api/availability");
+      setActiveVehicleIds(Array.isArray(data?.unavailableVehicleIds) ? data.unavailableVehicleIds : []);
+      setUnavailableBatteryIds(Array.isArray(data?.unavailableBatteryIds) ? data.unavailableBatteryIds : []);
+    } catch {
+      setActiveVehicleIds([]);
+      setUnavailableBatteryIds([]);
+    }
+  };
+
   useEffect(() => {
     if (!canLoad) return;
     loadAll();
+    loadLiveAvailability();
+
+    const interval = setInterval(() => {
+      loadLiveAvailability();
+    }, 15000);
+
+    return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canLoad]);
+
+  useEffect(() => {
+    const currentIn = normalizeForCompare(form.batteryIn);
+    if (!currentIn) return;
+    const currentOut = normalizeForCompare(form.batteryOut);
+    if (currentIn === currentOut || unavailableBatterySet.has(currentIn)) {
+      setForm((prev) => ({ ...prev, batteryIn: "" }));
+    }
+  }, [form.batteryIn, form.batteryOut, unavailableBatterySet]);
 
   const validate = () => {
     const next = {};
@@ -552,6 +615,7 @@ export default function BatterySwaps() {
       setUsageLoading(true);
       const usage = await getBatteryUsage();
       setUsageRows(usage || []);
+      await loadLiveAvailability();
     } catch (e) {
       setBanner({
         type: "error",
@@ -837,7 +901,7 @@ export default function BatterySwaps() {
                           {filteredVehicleIds.length === 0 ? (
                             <div className="px-3 py-2 text-sm text-gray-500">No matching vehicle.</div>
                           ) : (
-                            filteredVehicleGroups.map((group) => (
+                            activeOnlyVehicleGroups.map((group) => (
                               <div key={group.label}>
                                 <div className="px-3 pt-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
                                   {group.label}

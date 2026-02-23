@@ -13,6 +13,7 @@ import https from "https";
 import admin from "firebase-admin";
 import multer from "multer";
 import PDFDocument from "pdfkit";
+import AdmZip from "adm-zip";
 import {
   buildIciciEncryptedRequest,
   decryptIciciAsymmetricPayload,
@@ -720,6 +721,141 @@ async function saveDataUrlToUploads({ dataUrl, fileNameHint }) {
     size_bytes: buffer.length,
   };
 }
+
+function isUuidLike(value) {
+  const s = String(value || "").trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
+}
+
+function toJsonObject(value, fallback = {}) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    } catch {
+      // ignore
+    }
+  }
+  return fallback;
+}
+
+function toJsonArray(value) {
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function normalizeArchiveName(value, fallback = "rider") {
+  const s = safeFilePart(value, 120);
+  return s || safeFilePart(fallback, 120) || "rider";
+}
+
+function uploadsAbsPathFromUrl(url) {
+  const raw = String(url || "").trim();
+  if (!raw.startsWith("/uploads/")) return null;
+  const rel = raw.replace(/^\/uploads\//, "");
+  if (!rel || rel.includes("..") || path.isAbsolute(rel)) return null;
+  return path.join(uploadsDir, rel);
+}
+
+function inferMimeTypeFromExt(ext) {
+  const e = String(ext || "").toLowerCase();
+  if (e === ".jpg" || e === ".jpeg") return "image/jpeg";
+  if (e === ".png") return "image/png";
+  if (e === ".webp") return "image/webp";
+  if (e === ".gif") return "image/gif";
+  if (e === ".pdf") return "application/pdf";
+  return "application/octet-stream";
+}
+
+async function collectRiderProfileBundle(riderId) {
+  const riderQ = await pool.query(`select * from public.riders where id = $1`, [riderId]);
+  const rider = riderQ.rows?.[0] || null;
+  if (!rider) return null;
+
+  const rentalsQ = await pool.query(
+    `select *
+     from public.rentals
+     where rider_id = $1
+     order by start_time asc, created_at asc`,
+    [riderId]
+  );
+  const rentals = rentalsQ.rows || [];
+  const rentalIds = rentals.map((r) => String(r?.id || "")).filter(isUuidLike);
+
+  const returnsQ = rentalIds.length
+    ? await pool.query(
+      `select *
+       from public.returns
+       where rental_id = any($1::uuid[])
+       order by returned_at asc, created_at asc`,
+      [rentalIds]
+    )
+    : { rows: [] };
+
+  const docsQ = await pool.query(
+    `select distinct d.*
+     from public.documents d
+     where d.rider_id = $1
+        or d.rental_id in (select id from public.rentals where rider_id = $1)
+        or d.return_id in (
+          select rt.id
+          from public.returns rt
+          join public.rentals r on r.id = rt.rental_id
+          where r.rider_id = $1
+        )
+     order by d.created_at asc`,
+    [riderId]
+  );
+
+  const swapsQ = await pool.query(
+    `select s.id, s.created_at, s.swapped_at, s.employee_uid, s.employee_email,
+            s.vehicle_number, s.battery_out, s.battery_in, s.notes,
+            rr.rental_id, rr.rider_id
+     from public.battery_swaps s
+     join lateral (
+       select r.id as rental_id,
+              rd.id as rider_id
+       from public.rentals r
+       left join public.riders rd on rd.id = r.rider_id
+       left join lateral (
+         select max(returned_at) as returned_at
+         from public.returns rt
+         where rt.rental_id = r.id
+       ) ret on true
+       where regexp_replace(lower(coalesce(r.vehicle_number,'')),'[^a-z0-9]+','','g') =
+             regexp_replace(lower(coalesce(s.vehicle_number,'')),'[^a-z0-9]+','','g')
+         and r.start_time <= coalesce(s.swapped_at, s.created_at)
+         and (ret.returned_at is null or ret.returned_at > coalesce(s.swapped_at, s.created_at))
+       order by r.start_time desc
+       limit 1
+     ) rr on true
+     where rr.rider_id = $1
+     order by coalesce(s.swapped_at, s.created_at) asc`,
+    [riderId]
+  );
+
+  return {
+    rider,
+    rentals,
+    returns: returnsQ.rows || [],
+    documents: docsQ.rows || [],
+    battery_swaps: swapsQ.rows || [],
+  };
+}
+
+const profileArchiveUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 250 * 1024 * 1024 },
+});
 
 function createReceiptPdfBuffer({ formData, registration }) {
   return new Promise((resolve, reject) => {
@@ -4393,6 +4529,580 @@ app.get("/api/rentals/:id/documents", async (req, res) => {
     res.json(rows || []);
   } catch (error) {
     res.status(500).json({ error: String(error?.message || error) });
+  }
+});
+
+app.post("/api/riders/export-profiles", async (req, res) => {
+  try {
+    const inputIds = Array.isArray(req.body?.riderIds)
+      ? req.body.riderIds.map((id) => String(id || "").trim()).filter(isUuidLike)
+      : [];
+
+    if (Array.isArray(req.body?.riderIds) && inputIds.length === 0) {
+      return res.status(400).json({ error: "No valid riderIds provided" });
+    }
+
+    const riderIds = inputIds.length
+      ? inputIds
+      : (await pool.query(`select id from public.riders order by created_at desc`)).rows.map((r) => String(r.id));
+
+    if (riderIds.length === 0) {
+      return res.status(404).json({ error: "No riders found to export" });
+    }
+
+    const zip = new AdmZip();
+    const usedFolders = new Set();
+    const manifest = {
+      exported_at: new Date().toISOString(),
+      total_requested: riderIds.length,
+      riders: [],
+    };
+
+    for (let index = 0; index < riderIds.length; index += 1) {
+      const riderId = riderIds[index];
+      const bundle = await collectRiderProfileBundle(riderId);
+      if (!bundle?.rider) continue;
+
+      const riderMeta = toJsonObject(bundle.rider.meta, {});
+      const riderCode = String(riderMeta?.rider_code || "").trim();
+      let folderName = normalizeArchiveName(
+        riderCode || bundle.rider.full_name || bundle.rider.mobile || bundle.rider.id,
+        `rider-${index + 1}`
+      );
+      if (usedFolders.has(folderName)) {
+        let suffix = 2;
+        while (usedFolders.has(`${folderName}-${suffix}`)) suffix += 1;
+        folderName = `${folderName}-${suffix}`;
+      }
+      usedFolders.add(folderName);
+
+      const documentsForExport = [];
+      for (let docIndex = 0; docIndex < bundle.documents.length; docIndex += 1) {
+        const d = bundle.documents[docIndex];
+        const docCopy = { ...d };
+        const absPath = uploadsAbsPathFromUrl(d?.url);
+        if (absPath && fs.existsSync(absPath)) {
+          const ext = path.extname(String(d?.file_name || "")) || path.extname(absPath) || "";
+          const base = normalizeArchiveName(
+            path.basename(String(d?.file_name || ""), ext) || `document-${docIndex + 1}`,
+            `document-${docIndex + 1}`
+          );
+          const fileName = `${base}${ext || ".bin"}`;
+          const archivePath = `${folderName}/files/${fileName}`;
+          const fileBuffer = await fs.promises.readFile(absPath);
+          zip.addFile(archivePath, fileBuffer);
+          docCopy.archive_path = archivePath;
+        }
+        documentsForExport.push(docCopy);
+      }
+
+      zip.addFile(`${folderName}/rider.json`, Buffer.from(JSON.stringify(bundle.rider, null, 2), "utf8"));
+      zip.addFile(`${folderName}/rentals.json`, Buffer.from(JSON.stringify(bundle.rentals, null, 2), "utf8"));
+      zip.addFile(`${folderName}/returns.json`, Buffer.from(JSON.stringify(bundle.returns, null, 2), "utf8"));
+      zip.addFile(`${folderName}/documents.json`, Buffer.from(JSON.stringify(documentsForExport, null, 2), "utf8"));
+      zip.addFile(`${folderName}/battery-swaps.json`, Buffer.from(JSON.stringify(bundle.battery_swaps, null, 2), "utf8"));
+
+      manifest.riders.push({
+        rider_id: bundle.rider.id,
+        folder: folderName,
+        rentals: bundle.rentals.length,
+        returns: bundle.returns.length,
+        documents: documentsForExport.length,
+        battery_swaps: bundle.battery_swaps.length,
+      });
+    }
+
+    if (manifest.riders.length === 0) {
+      return res.status(404).json({ error: "No rider profiles could be exported" });
+    }
+
+    zip.addFile("export_manifest.json", Buffer.from(JSON.stringify(manifest, null, 2), "utf8"));
+
+    const outBuffer = zip.toBuffer();
+    const stamp = new Date().toISOString().slice(0, 10);
+    const outName = `rider-profiles-${stamp}.zip`;
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${outName}"`);
+    return res.send(outBuffer);
+  } catch (error) {
+    return res.status(500).json({ error: String(error?.message || error) });
+  }
+});
+
+app.post("/api/riders/import-profiles", profileArchiveUpload.single("archive"), async (req, res) => {
+  const file = req.file;
+  if (!file) return res.status(400).json({ error: "archive file is required" });
+
+  let zip;
+  try {
+    zip = new AdmZip(file.buffer);
+  } catch {
+    return res.status(400).json({ error: "Invalid zip archive" });
+  }
+
+  const entries = zip.getEntries().filter((e) => !e.isDirectory);
+  const riderEntries = entries.filter((e) => /(^|\/)rider\.json$/i.test(String(e.entryName || "")));
+  if (riderEntries.length === 0) {
+    return res.status(400).json({ error: "Archive does not contain rider profiles" });
+  }
+
+  const readJsonEntry = (entryPath, fallback) => {
+    const entry = zip.getEntry(entryPath);
+    if (!entry) return fallback;
+    try {
+      const parsed = JSON.parse(entry.getData().toString("utf8"));
+      return parsed ?? fallback;
+    } catch {
+      return fallback;
+    }
+  };
+
+  const packages = riderEntries.map((entry) => {
+    const folder = path.posix.dirname(String(entry.entryName || ""));
+    const root = folder === "." ? "" : folder;
+    const rider = readJsonEntry(entry.entryName, null);
+    const rentals = readJsonEntry(root ? `${root}/rentals.json` : "rentals.json", []);
+    const returns = readJsonEntry(root ? `${root}/returns.json` : "returns.json", []);
+    const documents = readJsonEntry(root ? `${root}/documents.json` : "documents.json", []);
+    const batterySwaps = readJsonEntry(root ? `${root}/battery-swaps.json` : "battery-swaps.json", []);
+    return {
+      folder: root,
+      rider: rider && typeof rider === "object" ? rider : null,
+      rentals: Array.isArray(rentals) ? rentals : [],
+      returns: Array.isArray(returns) ? returns : [],
+      documents: Array.isArray(documents) ? documents : [],
+      batterySwaps: Array.isArray(batterySwaps) ? batterySwaps : [],
+    };
+  });
+
+  const client = await pool.connect();
+  const summary = {
+    ridersImported: 0,
+    rentalsImported: 0,
+    returnsImported: 0,
+    documentsImported: 0,
+    batterySwapsImported: 0,
+    failedRiders: [],
+  };
+
+  try {
+    await client.query("begin");
+
+    for (const item of packages) {
+      await client.query("savepoint rider_profile_import");
+      try {
+        const riderRow = item.rider;
+        const fullName = String(riderRow?.full_name || "").trim();
+        const mobile = toDigits(riderRow?.mobile || "", 10);
+        if (!fullName || mobile.length !== 10) {
+          throw new Error("Invalid rider payload (full_name/mobile)");
+        }
+
+        const incomingRiderId = isUuidLike(riderRow?.id) ? String(riderRow.id) : null;
+        const riderMeta = toJsonObject(riderRow?.meta, {});
+        const aadhaar = toDigits(riderRow?.aadhaar || "", 12) || null;
+
+        const existingQ = await client.query(
+          `select id
+           from public.riders
+           where ($1::uuid is not null and id = $1::uuid)
+              or mobile = $2
+           limit 1`,
+          [incomingRiderId, mobile]
+        );
+        let riderId = existingQ.rows?.[0]?.id || null;
+
+        if (riderId) {
+          const updatedQ = await client.query(
+            `update public.riders
+             set full_name = $1,
+                 mobile = $2,
+                 aadhaar = $3,
+                 dob = $4,
+                 gender = $5,
+                 permanent_address = $6,
+                 temporary_address = $7,
+                 reference = $8,
+                 status = $9,
+                 meta = $10,
+                 updated_at = coalesce($11::timestamptz, now())
+             where id = $12
+             returning id`,
+            [
+              fullName,
+              mobile,
+              aadhaar,
+              riderRow?.dob || null,
+              riderRow?.gender || null,
+              riderRow?.permanent_address || null,
+              riderRow?.temporary_address || null,
+              riderRow?.reference || null,
+              riderRow?.status || "active",
+              JSON.stringify(riderMeta),
+              riderRow?.updated_at || null,
+              riderId,
+            ]
+          );
+          riderId = updatedQ.rows?.[0]?.id || riderId;
+        } else {
+          const insertWithId = Boolean(incomingRiderId);
+          const insertSql = insertWithId
+            ? `insert into public.riders
+                 (id, created_at, updated_at, full_name, mobile, aadhaar, dob, gender, permanent_address, temporary_address, reference, status, meta)
+               values
+                 ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+               returning id`
+            : `insert into public.riders
+                 (created_at, updated_at, full_name, mobile, aadhaar, dob, gender, permanent_address, temporary_address, reference, status, meta)
+               values
+                 ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+               returning id`;
+
+          const params = insertWithId
+            ? [
+              incomingRiderId,
+              riderRow?.created_at || new Date().toISOString(),
+              riderRow?.updated_at || riderRow?.created_at || new Date().toISOString(),
+              fullName,
+              mobile,
+              aadhaar,
+              riderRow?.dob || null,
+              riderRow?.gender || null,
+              riderRow?.permanent_address || null,
+              riderRow?.temporary_address || null,
+              riderRow?.reference || null,
+              riderRow?.status || "active",
+              JSON.stringify(riderMeta),
+            ]
+            : [
+              riderRow?.created_at || new Date().toISOString(),
+              riderRow?.updated_at || riderRow?.created_at || new Date().toISOString(),
+              fullName,
+              mobile,
+              aadhaar,
+              riderRow?.dob || null,
+              riderRow?.gender || null,
+              riderRow?.permanent_address || null,
+              riderRow?.temporary_address || null,
+              riderRow?.reference || null,
+              riderRow?.status || "active",
+              JSON.stringify(riderMeta),
+            ];
+
+          const insertedQ = await client.query(insertSql, params);
+          riderId = insertedQ.rows?.[0]?.id || null;
+        }
+
+        if (!riderId) {
+          throw new Error("Unable to create/update rider");
+        }
+
+        summary.ridersImported += 1;
+
+        const rentalIdMap = new Map();
+        const returnIdMap = new Map();
+        const incomingRiderIdKey = String(riderRow?.id || "");
+
+        for (const rentalRow of item.rentals) {
+          if (!rentalRow || typeof rentalRow !== "object") continue;
+          const incomingRentalId = isUuidLike(rentalRow?.id) ? String(rentalRow.id) : null;
+          const accessories = toJsonArray(rentalRow?.accessories);
+          const rentalMeta = toJsonObject(rentalRow?.meta, {});
+
+          const upsertWithId = Boolean(incomingRentalId);
+          const rentalSql = upsertWithId
+            ? `insert into public.rentals
+                 (id, created_at, updated_at, rider_id, start_time, end_time, rental_package, rental_amount, deposit_amount, total_amount, payment_mode, bike_model, bike_id, battery_id, vehicle_number, accessories, other_accessories, meta)
+               values
+                 ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+               on conflict (id) do update set
+                 rider_id = excluded.rider_id,
+                 start_time = excluded.start_time,
+                 end_time = excluded.end_time,
+                 rental_package = excluded.rental_package,
+                 rental_amount = excluded.rental_amount,
+                 deposit_amount = excluded.deposit_amount,
+                 total_amount = excluded.total_amount,
+                 payment_mode = excluded.payment_mode,
+                 bike_model = excluded.bike_model,
+                 bike_id = excluded.bike_id,
+                 battery_id = excluded.battery_id,
+                 vehicle_number = excluded.vehicle_number,
+                 accessories = excluded.accessories,
+                 other_accessories = excluded.other_accessories,
+                 meta = excluded.meta,
+                 updated_at = excluded.updated_at
+               returning id`
+            : `insert into public.rentals
+                 (created_at, updated_at, rider_id, start_time, end_time, rental_package, rental_amount, deposit_amount, total_amount, payment_mode, bike_model, bike_id, battery_id, vehicle_number, accessories, other_accessories, meta)
+               values
+                 ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+               returning id`;
+
+          const rentalParams = upsertWithId
+            ? [
+              incomingRentalId,
+              rentalRow?.created_at || new Date().toISOString(),
+              rentalRow?.updated_at || rentalRow?.created_at || new Date().toISOString(),
+              riderId,
+              rentalRow?.start_time,
+              rentalRow?.end_time || null,
+              rentalRow?.rental_package || null,
+              Number(rentalRow?.rental_amount ?? 0),
+              Number(rentalRow?.deposit_amount ?? 0),
+              Number(rentalRow?.total_amount ?? 0),
+              rentalRow?.payment_mode || null,
+              rentalRow?.bike_model || null,
+              rentalRow?.bike_id || null,
+              rentalRow?.battery_id || null,
+              rentalRow?.vehicle_number || null,
+              JSON.stringify(accessories),
+              rentalRow?.other_accessories || null,
+              JSON.stringify(rentalMeta),
+            ]
+            : [
+              rentalRow?.created_at || new Date().toISOString(),
+              rentalRow?.updated_at || rentalRow?.created_at || new Date().toISOString(),
+              riderId,
+              rentalRow?.start_time,
+              rentalRow?.end_time || null,
+              rentalRow?.rental_package || null,
+              Number(rentalRow?.rental_amount ?? 0),
+              Number(rentalRow?.deposit_amount ?? 0),
+              Number(rentalRow?.total_amount ?? 0),
+              rentalRow?.payment_mode || null,
+              rentalRow?.bike_model || null,
+              rentalRow?.bike_id || null,
+              rentalRow?.battery_id || null,
+              rentalRow?.vehicle_number || null,
+              JSON.stringify(accessories),
+              rentalRow?.other_accessories || null,
+              JSON.stringify(rentalMeta),
+            ];
+
+          const rentalQ = await client.query(rentalSql, rentalParams);
+          const savedRentalId = rentalQ.rows?.[0]?.id || null;
+          if (savedRentalId && incomingRentalId) {
+            rentalIdMap.set(incomingRentalId, savedRentalId);
+          }
+          summary.rentalsImported += savedRentalId ? 1 : 0;
+        }
+
+        for (const returnRow of item.returns) {
+          if (!returnRow || typeof returnRow !== "object") continue;
+          const incomingReturnId = isUuidLike(returnRow?.id) ? String(returnRow.id) : null;
+          const oldRentalId = String(returnRow?.rental_id || "");
+          const mappedRentalId = rentalIdMap.get(oldRentalId) || (isUuidLike(oldRentalId) ? oldRentalId : null);
+          if (!mappedRentalId) continue;
+
+          const returnMeta = toJsonObject(returnRow?.meta, {});
+          const upsertWithId = Boolean(incomingReturnId);
+          const returnSql = upsertWithId
+            ? `insert into public.returns
+                 (id, created_at, rental_id, returned_at, condition_notes, meta)
+               values
+                 ($1,$2,$3,$4,$5,$6)
+               on conflict (id) do update set
+                 rental_id = excluded.rental_id,
+                 returned_at = excluded.returned_at,
+                 condition_notes = excluded.condition_notes,
+                 meta = excluded.meta
+               returning id`
+            : `insert into public.returns
+                 (created_at, rental_id, returned_at, condition_notes, meta)
+               values
+                 ($1,$2,$3,$4,$5)
+               returning id`;
+
+          const returnParams = upsertWithId
+            ? [
+              incomingReturnId,
+              returnRow?.created_at || returnRow?.returned_at || new Date().toISOString(),
+              mappedRentalId,
+              returnRow?.returned_at || returnRow?.created_at || new Date().toISOString(),
+              returnRow?.condition_notes || null,
+              JSON.stringify(returnMeta),
+            ]
+            : [
+              returnRow?.created_at || returnRow?.returned_at || new Date().toISOString(),
+              mappedRentalId,
+              returnRow?.returned_at || returnRow?.created_at || new Date().toISOString(),
+              returnRow?.condition_notes || null,
+              JSON.stringify(returnMeta),
+            ];
+
+          const returnQ = await client.query(returnSql, returnParams);
+          const savedReturnId = returnQ.rows?.[0]?.id || null;
+          if (savedReturnId && incomingReturnId) {
+            returnIdMap.set(incomingReturnId, savedReturnId);
+          }
+          summary.returnsImported += savedReturnId ? 1 : 0;
+        }
+
+        for (const docRow of item.documents) {
+          if (!docRow || typeof docRow !== "object") continue;
+
+          const incomingDocId = isUuidLike(docRow?.id) ? String(docRow.id) : null;
+          const oldDocRiderId = String(docRow?.rider_id || "");
+          const oldDocRentalId = String(docRow?.rental_id || "");
+          const oldDocReturnId = String(docRow?.return_id || "");
+
+          const mappedDocRiderId = oldDocRiderId && oldDocRiderId === incomingRiderIdKey ? riderId : riderId;
+          const mappedDocRentalId = rentalIdMap.get(oldDocRentalId) || (isUuidLike(oldDocRentalId) ? oldDocRentalId : null);
+          const mappedDocReturnId = returnIdMap.get(oldDocReturnId) || (isUuidLike(oldDocReturnId) ? oldDocReturnId : null);
+
+          let nextUrl = String(docRow?.url || "").trim();
+          let nextFileName = String(docRow?.file_name || "").trim() || null;
+          let nextMime = String(docRow?.mime_type || "").trim() || null;
+          let nextSize = Number(docRow?.size_bytes || 0) || null;
+
+          const archivePath = String(docRow?.archive_path || "").trim();
+          if (archivePath) {
+            const archiveEntry = zip.getEntry(archivePath.replace(/^\/+/, ""));
+            if (archiveEntry) {
+              const raw = archiveEntry.getData();
+              const ext = path.extname(nextFileName || archivePath) || "";
+              const importedName = `${Date.now()}-${Math.random().toString(16).slice(2)}${ext || ".bin"}`;
+              const importedAbs = path.join(uploadsDir, importedName);
+              await fs.promises.writeFile(importedAbs, raw);
+              nextUrl = `/uploads/${importedName}`;
+              nextFileName = importedName;
+              nextSize = raw.length;
+              nextMime = nextMime || inferMimeTypeFromExt(ext);
+            }
+          }
+
+          if (!nextUrl) continue;
+
+          const docMeta = toJsonObject(docRow?.meta, {});
+          const upsertWithId = Boolean(incomingDocId);
+          const docSql = upsertWithId
+            ? `insert into public.documents
+                 (id, created_at, rider_id, rental_id, return_id, kind, file_name, mime_type, size_bytes, url, meta)
+               values
+                 ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+               on conflict (id) do update set
+                 rider_id = excluded.rider_id,
+                 rental_id = excluded.rental_id,
+                 return_id = excluded.return_id,
+                 kind = excluded.kind,
+                 file_name = excluded.file_name,
+                 mime_type = excluded.mime_type,
+                 size_bytes = excluded.size_bytes,
+                 url = excluded.url,
+                 meta = excluded.meta
+               returning id`
+            : `insert into public.documents
+                 (created_at, rider_id, rental_id, return_id, kind, file_name, mime_type, size_bytes, url, meta)
+               values
+                 ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+               returning id`;
+
+          const docParams = upsertWithId
+            ? [
+              incomingDocId,
+              docRow?.created_at || new Date().toISOString(),
+              mappedDocRiderId,
+              mappedDocRentalId,
+              mappedDocReturnId,
+              String(docRow?.kind || "").trim() || "document",
+              nextFileName,
+              nextMime,
+              nextSize,
+              nextUrl,
+              JSON.stringify(docMeta),
+            ]
+            : [
+              docRow?.created_at || new Date().toISOString(),
+              mappedDocRiderId,
+              mappedDocRentalId,
+              mappedDocReturnId,
+              String(docRow?.kind || "").trim() || "document",
+              nextFileName,
+              nextMime,
+              nextSize,
+              nextUrl,
+              JSON.stringify(docMeta),
+            ];
+
+          const docQ = await client.query(docSql, docParams);
+          summary.documentsImported += docQ.rows?.[0]?.id ? 1 : 0;
+        }
+
+        for (const swapRow of item.batterySwaps) {
+          if (!swapRow || typeof swapRow !== "object") continue;
+          const incomingSwapId = isUuidLike(swapRow?.id) ? String(swapRow.id) : null;
+          const vehicleNumber = String(swapRow?.vehicle_number || "").trim();
+          const batteryOut = String(swapRow?.battery_out || "").trim();
+          const batteryIn = String(swapRow?.battery_in || "").trim();
+          if (!vehicleNumber || !batteryOut || !batteryIn) continue;
+
+          const swapSql = incomingSwapId
+            ? `insert into public.battery_swaps
+                 (id, created_at, employee_uid, employee_email, vehicle_number, battery_out, battery_in, swapped_at, notes)
+               values
+                 ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+               on conflict (id) do update set
+                 employee_uid = excluded.employee_uid,
+                 employee_email = excluded.employee_email,
+                 vehicle_number = excluded.vehicle_number,
+                 battery_out = excluded.battery_out,
+                 battery_in = excluded.battery_in,
+                 swapped_at = excluded.swapped_at,
+                 notes = excluded.notes
+               returning id`
+            : `insert into public.battery_swaps
+                 (created_at, employee_uid, employee_email, vehicle_number, battery_out, battery_in, swapped_at, notes)
+               values
+                 ($1,$2,$3,$4,$5,$6,$7,$8)
+               returning id`;
+
+          const swapParams = incomingSwapId
+            ? [
+              incomingSwapId,
+              swapRow?.created_at || swapRow?.swapped_at || new Date().toISOString(),
+              String(swapRow?.employee_uid || "system").trim() || "system",
+              swapRow?.employee_email || null,
+              vehicleNumber,
+              batteryOut,
+              batteryIn,
+              swapRow?.swapped_at || swapRow?.created_at || new Date().toISOString(),
+              swapRow?.notes || null,
+            ]
+            : [
+              swapRow?.created_at || swapRow?.swapped_at || new Date().toISOString(),
+              String(swapRow?.employee_uid || "system").trim() || "system",
+              swapRow?.employee_email || null,
+              vehicleNumber,
+              batteryOut,
+              batteryIn,
+              swapRow?.swapped_at || swapRow?.created_at || new Date().toISOString(),
+              swapRow?.notes || null,
+            ];
+
+          const swapQ = await client.query(swapSql, swapParams);
+          summary.batterySwapsImported += swapQ.rows?.[0]?.id ? 1 : 0;
+        }
+      } catch (error) {
+        await client.query("rollback to savepoint rider_profile_import");
+        summary.failedRiders.push({
+          folder: item.folder || "root",
+          rider_id: item.rider?.id || null,
+          error: String(error?.message || error),
+        });
+      }
+    }
+
+    await client.query("commit");
+    return res.json({
+      ok: true,
+      ...summary,
+    });
+  } catch (error) {
+    await client.query("rollback");
+    return res.status(500).json({ error: String(error?.message || error) });
+  } finally {
+    client.release();
   }
 });
 
