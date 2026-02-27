@@ -4534,6 +4534,16 @@ app.get("/api/rentals/:id/documents", async (req, res) => {
 
 app.post("/api/riders/export-profiles", async (req, res) => {
   try {
+    const sendProfilesZip = ({ zip, manifest }) => {
+      zip.addFile("export_manifest.json", Buffer.from(JSON.stringify(manifest, null, 2), "utf8"));
+      const outBuffer = zip.toBuffer();
+      const stamp = new Date().toISOString().slice(0, 10);
+      const outName = `rider-profiles-${stamp}.zip`;
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader("Content-Disposition", `attachment; filename="${outName}"`);
+      return res.send(outBuffer);
+    };
+
     const inputIds = Array.isArray(req.body?.riderIds)
       ? req.body.riderIds.map((id) => String(id || "").trim()).filter(isUuidLike)
       : [];
@@ -4547,7 +4557,14 @@ app.post("/api/riders/export-profiles", async (req, res) => {
       : (await pool.query(`select id from public.riders order by created_at desc`)).rows.map((r) => String(r.id));
 
     if (riderIds.length === 0) {
-      return res.status(404).json({ error: "No riders found to export" });
+      return sendProfilesZip({
+        zip: new AdmZip(),
+        manifest: {
+          exported_at: new Date().toISOString(),
+          total_requested: 0,
+          riders: [],
+        },
+      });
     }
 
     const zip = new AdmZip();
@@ -4613,17 +4630,10 @@ app.post("/api/riders/export-profiles", async (req, res) => {
     }
 
     if (manifest.riders.length === 0) {
-      return res.status(404).json({ error: "No rider profiles could be exported" });
+      return sendProfilesZip({ zip, manifest });
     }
 
-    zip.addFile("export_manifest.json", Buffer.from(JSON.stringify(manifest, null, 2), "utf8"));
-
-    const outBuffer = zip.toBuffer();
-    const stamp = new Date().toISOString().slice(0, 10);
-    const outName = `rider-profiles-${stamp}.zip`;
-    res.setHeader("Content-Type", "application/zip");
-    res.setHeader("Content-Disposition", `attachment; filename="${outName}"`);
-    return res.send(outBuffer);
+    return sendProfilesZip({ zip, manifest });
   } catch (error) {
     return res.status(500).json({ error: String(error?.message || error) });
   }
