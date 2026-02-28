@@ -13,7 +13,6 @@ import https from "https";
 import admin from "firebase-admin";
 import multer from "multer";
 import PDFDocument from "pdfkit";
-import AdmZip from "adm-zip";
 import {
   buildIciciEncryptedRequest,
   decryptIciciAsymmetricPayload,
@@ -23,6 +22,22 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+let admZipCtor = null;
+let admZipLoadError = null;
+
+async function getAdmZipCtor() {
+  if (admZipCtor) return admZipCtor;
+  if (admZipLoadError) throw admZipLoadError;
+  try {
+    const mod = await import("adm-zip");
+    admZipCtor = mod?.default || mod;
+    return admZipCtor;
+  } catch (error) {
+    admZipLoadError = error;
+    throw error;
+  }
+}
 
 // Prefer server/.env so local DB config stays with the API.
 // Use override so a globally-set DATABASE_URL doesn't silently take precedence.
@@ -4533,6 +4548,13 @@ app.get("/api/rentals/:id/documents", async (req, res) => {
 });
 
 app.post("/api/riders/export-profiles", async (req, res) => {
+  let AdmZip;
+  try {
+    AdmZip = await getAdmZipCtor();
+  } catch {
+    return res.status(503).json({ error: "Profile export dependency not installed on server" });
+  }
+
   try {
     const sendProfilesZip = ({ zip, manifest }) => {
       zip.addFile("export_manifest.json", Buffer.from(JSON.stringify(manifest, null, 2), "utf8"));
@@ -4640,6 +4662,13 @@ app.post("/api/riders/export-profiles", async (req, res) => {
 });
 
 app.post("/api/riders/import-profiles", profileArchiveUpload.single("archive"), async (req, res) => {
+  let AdmZip;
+  try {
+    AdmZip = await getAdmZipCtor();
+  } catch {
+    return res.status(503).json({ error: "Profile import dependency not installed on server" });
+  }
+
   const file = req.file;
   if (!file) return res.status(400).json({ error: "archive file is required" });
 
