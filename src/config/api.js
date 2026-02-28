@@ -1,6 +1,10 @@
-const API_BASE = String(
+const explicitApiBase = String(
   import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || ""
 ).replace(/\/+$/, "");
+
+const hostName = typeof window !== "undefined" ? String(window.location?.hostname || "") : "";
+const isLocalHost = hostName === "localhost" || hostName === "127.0.0.1" || hostName === "::1";
+const API_BASE = explicitApiBase || (isLocalHost ? "http://127.0.0.1:5050" : "");
 
 import { auth } from "./firebase";
 import { getValidAuthSession } from "../utils/authSession";
