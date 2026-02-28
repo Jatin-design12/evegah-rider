@@ -27,6 +27,7 @@ export default function ReturnsTable() {
   const [sort, setSort] = useState({ key: "returned_at", direction: "desc" });
   const [columnsOpen, setColumnsOpen] = useState(false);
   const [columnsScrollTop, setColumnsScrollTop] = useState(0);
+  const [viewItem, setViewItem] = useState(null);
   const [visibleCols, setVisibleCols] = useState({
     rider_full_name_display: true,
     rider_mobile_display: true,
@@ -36,8 +37,7 @@ export default function ReturnsTable() {
     returned_at: true,
     deposit_returned_amount_value: true,
     condition_notes: true,
-    rental_id_display: true,
-    return_id_display: true,
+    feedback: true,
   });
 
   const columnOptions = [
@@ -48,9 +48,8 @@ export default function ReturnsTable() {
     { key: "start_time", label: "Start" },
     { key: "returned_at", label: "Returned At" },
     { key: "deposit_returned_amount_value", label: "Deposit" },
-    { key: "condition_notes", label: "Condition" },
-    { key: "rental_id_display", label: "Rental ID" },
-    { key: "return_id_display", label: "Return ID" },
+    { key: "condition_notes", label: "Latest Condition" },
+    { key: "feedback", label: "Latest Feedback" },
   ];
 
   const load = async ({ showLoading } = {}) => {
@@ -183,6 +182,17 @@ export default function ReturnsTable() {
     return formatDateTimeDDMMYYYY(value, "-");
   };
 
+  const parseMaybeJson = (value) => {
+    if (!value) return null;
+    if (typeof value === "object") return value;
+    if (typeof value !== "string") return null;
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  };
+
   const formatINR = (value) => {
     const n = Number(value || 0);
     const safe = Number.isFinite(n) ? n : 0;
@@ -194,6 +204,8 @@ export default function ReturnsTable() {
       const depositReturned = Boolean(r?.deposit_returned);
       const depositReturnedAmount = Number(r?.deposit_returned_amount || 0);
       const returnIdDisplay = formatReturnId(r?.return_id);
+      const returnMeta = parseMaybeJson(r?.return_meta);
+      const feedback = String(returnMeta?.feedback || "").trim();
       return {
         ...r,
         rider_full_name_display: r?.rider_full_name || "-",
@@ -201,6 +213,7 @@ export default function ReturnsTable() {
         deposit_returned_display: depositReturned ? "Returned" : "-",
         deposit_returned_amount_value: depositReturned ? depositReturnedAmount : 0,
         return_id_display: returnIdDisplay,
+        feedback,
       };
     });
   }, [data]);
@@ -230,10 +243,38 @@ export default function ReturnsTable() {
   }, [baseRows]);
 
   const rows = useMemo(() => {
-    return baseRows.map((r) => ({
+    const withIds = baseRows.map((r) => ({
       ...r,
       rental_id_display: rentalIdMap.get(String(r?.rental_id || "")) || formatRentalId(r?.rental_id),
     }));
+
+    const grouped = new Map();
+    withIds.forEach((r) => {
+      const key = String(r?.rider_id || r?.rider_mobile || r?.rider_code || "").trim();
+      if (!key) return;
+      const list = grouped.get(key) || [];
+      list.push(r);
+      grouped.set(key, list);
+    });
+
+    return Array.from(grouped.entries()).map(([riderKey, riderRows]) => {
+      const sortedByReturn = [...riderRows].sort(
+        (a, b) => Date.parse(b?.returned_at || b?.return_created_at || "") - Date.parse(a?.returned_at || a?.return_created_at || "")
+      );
+      const latest = sortedByReturn[0] || riderRows[0] || {};
+      const totalDepositReturned = riderRows.reduce(
+        (sum, item) => sum + Number(item?.deposit_returned_amount_value || 0),
+        0
+      );
+
+      return {
+        ...latest,
+        rider_key: riderKey,
+        returns_count: riderRows.length,
+        deposit_returned_amount_value: totalDepositReturned,
+        all_returns: sortedByReturn,
+      };
+    });
   }, [baseRows, rentalIdMap]);
 
   const filteredRows = useMemo(() => {
@@ -255,10 +296,7 @@ export default function ReturnsTable() {
         r?.bike_id,
         r?.battery_id,
         r?.condition_notes,
-        r?.rental_id,
-        r?.return_id,
-        r?.rental_id_display,
-        r?.return_id_display,
+        r?.feedback,
       ]
         .map((v) => String(v || "").toLowerCase())
         .join(" | ");
@@ -299,11 +337,9 @@ export default function ReturnsTable() {
         { key: "bike_id", header: "E-Bike ID" },
         { key: "battery_id", header: "Battery ID" },
         { key: "start_time", header: "Start" },
-        { key: "returned_at", header: "Returned At" },
-        { key: "deposit_returned_amount_value", header: "Deposit Returned" },
-        { key: "condition_notes", header: "Condition" },
-        { key: "rental_id_display", header: "Rental ID" },
-        { key: "return_id_display", header: "Return ID" },
+        { key: "returned_at", header: "Latest Return" },
+        { key: "returns_count", header: "Returns" },
+        { key: "deposit_returned_amount_value", header: "Deposit Returned (Total)" },
       ],
       rows: sortedRows,
     });
@@ -444,7 +480,7 @@ export default function ReturnsTable() {
                 <Search size={18} className="text-slate-600" />
                 <input
                   className="bg-transparent outline-none ml-3 w-full text-base font-normal placeholder-slate-400"
-                  placeholder="Search rider, mobile, vehicle, bike, battery, rental id…"
+                  placeholder="Search rider, mobile, vehicle, bike, battery, feedback…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -531,10 +567,11 @@ export default function ReturnsTable() {
                       {visibleCols.battery_id ? renderSortableTh({ label: "Battery ID", sortKey: "battery_id" }) : null}
                       {visibleCols.start_time ? renderSortableTh({ label: "Start", sortKey: "start_time" }) : null}
                       {visibleCols.returned_at ? renderSortableTh({ label: "Returned At", sortKey: "returned_at" }) : null}
+                      {renderSortableTh({ label: "Returns", sortKey: "returns_count" })}
                       {visibleCols.deposit_returned_amount_value ? renderSortableTh({ label: "Deposit", sortKey: "deposit_returned_amount_value" }) : null}
-                      {visibleCols.condition_notes ? renderSortableTh({ label: "Condition", sortKey: "condition_notes" }) : null}
-                      {visibleCols.rental_id_display ? renderSortableTh({ label: "Rental ID", sortKey: "rental_id_display" }) : null}
-                      {visibleCols.return_id_display ? renderSortableTh({ label: "Return ID", sortKey: "return_id_display" }) : null}
+                      {visibleCols.condition_notes ? renderSortableTh({ label: "Latest Condition", sortKey: "condition_notes" }) : null}
+                      {visibleCols.feedback ? renderSortableTh({ label: "Latest Feedback", sortKey: "feedback" }) : null}
+                      <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">Action</th>
                     </tr>
                   </thead>
 
@@ -542,7 +579,7 @@ export default function ReturnsTable() {
                     {pageRows.map((r, i) => {
                       const depositTone = r.deposit_returned_amount_value > 0 ? "text-green-700" : "text-slate-600";
                       return (
-                        <tr key={r.return_id || i} className="border-t border-white/30 hover:bg-white/40 transition-colors duration-200">
+                        <tr key={r.rider_key || r.return_id || i} className="border-t border-white/30 hover:bg-white/40 transition-colors duration-200">
                           {visibleCols.rider_full_name_display ? (
                             <td className="px-4 py-3">
                               <div className="font-medium text-slate-800">{r.rider_full_name_display}</div>
@@ -564,26 +601,31 @@ export default function ReturnsTable() {
                           {visibleCols.returned_at ? (
                             <td className="px-4 py-3 text-slate-600">{fmtDateTime(r.returned_at)}</td>
                           ) : null}
+                          <td className="px-4 py-3 text-slate-700 font-medium">{Number(r.returns_count || 0)}</td>
                           {visibleCols.deposit_returned_amount_value ? (
                             <td className={`px-4 py-3 font-semibold ${depositTone}`}>
                               {r.deposit_returned_amount_value > 0 ? formatINR(r.deposit_returned_amount_value) : "-"}
                             </td>
                           ) : null}
                           {visibleCols.condition_notes ? (
-                            <td className="px-4 py-3 max-w-md">
-                              <span className="line-clamp-2 text-slate-600">{r.condition_notes || "-"}</span>
+                            <td className="px-4 py-3 max-w-[14rem] text-slate-600">
+                              <span className="line-clamp-2">{r.condition_notes || "-"}</span>
                             </td>
                           ) : null}
-                          {visibleCols.rental_id_display ? (
-                            <td className="px-4 py-3">
-                              <span className="text-xs text-slate-500 font-medium">{r.rental_id_display}</span>
+                          {visibleCols.feedback ? (
+                            <td className="px-4 py-3 max-w-[14rem] text-slate-600">
+                              <span className="line-clamp-2">{r.feedback || "-"}</span>
                             </td>
                           ) : null}
-                          {visibleCols.return_id_display ? (
-                            <td className="px-4 py-3">
-                              <span className="text-xs text-slate-500 font-medium">{r.return_id_display}</span>
-                            </td>
-                          ) : null}
+                          <td className="px-4 py-3">
+                            <button
+                              type="button"
+                              onClick={() => setViewItem(r)}
+                              className="px-3 py-1.5 rounded-xl bg-brand-light text-evegah-primary text-xs font-semibold hover:bg-brand-light/80"
+                            >
+                              View
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}
@@ -623,6 +665,87 @@ export default function ReturnsTable() {
           </div>
         </main>
       </div>
+
+      {viewItem ? (
+        <div className="fixed inset-0 z-[3000] bg-black/40 p-4 sm:p-6" onClick={() => setViewItem(null)}>
+          <div
+            className="mx-auto mt-4 w-full max-w-5xl rounded-2xl bg-white shadow-2xl border border-slate-200 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Return Details</h3>
+                <p className="text-sm text-slate-600">
+                  {viewItem?.rider_full_name_display || "-"} · {viewItem?.rider_mobile_display || "-"}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewItem(null)}
+                className="px-3 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="p-5 grid grid-cols-1 sm:grid-cols-3 gap-3 border-b border-slate-100">
+              <div className="rounded-xl bg-slate-50 px-4 py-3">
+                <div className="text-xs uppercase tracking-wider text-slate-500">Total Returns</div>
+                <div className="text-lg font-semibold text-slate-900">{Number(viewItem?.returns_count || 0)}</div>
+              </div>
+              <div className="rounded-xl bg-slate-50 px-4 py-3">
+                <div className="text-xs uppercase tracking-wider text-slate-500">Deposit Returned</div>
+                <div className="text-lg font-semibold text-green-700">{formatINR(viewItem?.deposit_returned_amount_value || 0)}</div>
+              </div>
+              <div className="rounded-xl bg-slate-50 px-4 py-3">
+                <div className="text-xs uppercase tracking-wider text-slate-500">Last Returned At</div>
+                <div className="text-lg font-semibold text-slate-900">{fmtDateTime(viewItem?.returned_at)}</div>
+              </div>
+            </div>
+
+            <div className="max-h-[60vh] overflow-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-slate-100 sticky top-0">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">Returned At</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">Vehicle</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">Deposit</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">Condition</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-700">Feedback</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(viewItem?.all_returns || []).map((entry, index) => (
+                    <tr key={`${entry?.return_id || index}`} className="border-t border-slate-100 align-top">
+                      <td className="px-4 py-3 text-slate-700">
+                        <div>{fmtDateTime(entry?.returned_at)}</div>
+                        <div className="text-xs text-slate-500">
+                          {entry?.rental_id_display || "-"} · {entry?.return_id_display || "-"}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        <div>{entry?.vehicle_number || "-"}</div>
+                        <div className="text-xs text-slate-500">Bike {entry?.bike_id || "-"} · Battery {entry?.battery_id || "-"}</div>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-green-700">
+                        {Number(entry?.deposit_returned_amount_value || 0) > 0
+                          ? formatINR(entry?.deposit_returned_amount_value)
+                          : "-"}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700 max-w-[22rem]">
+                        <span className="whitespace-pre-wrap break-words">{entry?.condition_notes || "-"}</span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-700 max-w-[22rem]">
+                        <span className="whitespace-pre-wrap break-words">{entry?.feedback || "-"}</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
