@@ -878,26 +878,14 @@ export default function RidersTable() {
                         {visibleCols.actions ? (
                           <td className="p-4 flex gap-2">
                             <button
-                              onClick={() =>
-                                exportProfilesArchive({
-                                  riderIds: [r.id],
-                                  fallbackName: `rider-profile-${String(r.full_name || r.id || "rider").replace(/\s+/g, "-")}.zip`,
-                                  emptyMessage: "Rider not available for profile export.",
-                                })
-                              }
-                              disabled={profilesBusy}
-                              className="p-2 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors disabled:opacity-60"
-                              title="Export Profile ZIP"
-                            >
-                              <Download size={16} />
-                            </button>
-                            <button
                               onClick={() => setViewItem(r)}
                               className="p-2 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
                               title="View"
                             >
                               <Eye size={16} />
                             </button>
+
+                            
                             <button
                               onClick={() => setEditItem(r)}
                               className="p-2 rounded-lg bg-amber-50 text-amber-600 hover:bg-amber-100 transition-colors"
@@ -912,6 +900,22 @@ export default function RidersTable() {
                             >
                               <Trash2 size={16} />
                             </button>
+
+                            <button
+                              onClick={() =>
+                                exportProfilesArchive({
+                                  riderIds: [r.id],
+                                  fallbackName: `rider-profile-${String(r.full_name || r.id || "rider").replace(/\s+/g, "-")}.zip`,
+                                  emptyMessage: "Rider not available for profile export.",
+                                })
+                              }
+                              disabled={profilesBusy}
+                              className="p-2 rounded-lg bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition-colors disabled:opacity-60"
+                              title="Export Profile ZIP"
+                            >
+                              <Download size={16} />
+                            </button>
+                            
                           </td>
                         ) : null}
                       </tr>
