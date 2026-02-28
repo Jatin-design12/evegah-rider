@@ -4604,10 +4604,11 @@ app.post("/api/riders/export-profiles", async (req, res) => {
 
       const riderMeta = toJsonObject(bundle.rider.meta, {});
       const riderCode = String(riderMeta?.rider_code || "").trim();
-      let folderName = normalizeArchiveName(
-        riderCode || bundle.rider.full_name || bundle.rider.mobile || bundle.rider.id,
-        `rider-${index + 1}`
-      );
+      const riderName = String(bundle.rider?.full_name || "").trim();
+      const riderMobile = String(bundle.rider?.mobile || "").trim();
+      const riderNameMobile = [riderName, riderMobile].filter(Boolean).join("-");
+      const folderBase = riderNameMobile || riderCode || bundle.rider.id;
+      let folderName = normalizeArchiveName(folderBase, `rider-${index + 1}`);
       if (usedFolders.has(folderName)) {
         let suffix = 2;
         while (usedFolders.has(`${folderName}-${suffix}`)) suffix += 1;
