@@ -104,6 +104,7 @@ const getPackagePricing = (rentalPackage) => {
 
 /* ---------------- DEFAULT STATE ---------------- */
 const defaultFormData = {
+  quickRideMode: false,
   /* STEP 1 */
   name: "",
   phone: "",
@@ -160,8 +161,8 @@ const defaultFormData = {
 };
 
 /* ---------------- PROVIDER ---------------- */
-export function RiderFormProvider({ children, user, initialDraftId = null }) {
-  const [formData, setFormData] = useState({ ...defaultFormData });
+export function RiderFormProvider({ children, user, initialDraftId = null, initialQuickRideMode = false }) {
+  const [formData, setFormData] = useState({ ...defaultFormData, quickRideMode: Boolean(initialQuickRideMode) });
   const [errors, setErrors] = useState({});
   const [draftMeta, setDraftMeta] = useState(null);
   const [draftId, setDraftId] = useState(initialDraftId);
@@ -294,9 +295,12 @@ export function RiderFormProvider({ children, user, initialDraftId = null }) {
 
         setDraftId(draft.id);
         setDraftMeta(draft.meta || null);
+        const draftQuickMode = Boolean((draftData || {}).quickRideMode);
+        const resolvedQuickMode = draftQuickMode || Boolean(initialQuickRideMode);
         setFormData({
           ...defaultFormData,
           ...draftData,
+          quickRideMode: resolvedQuickMode,
           draftId: draft.id,
           draftSavedAt: draft.updated_at || draft.created_at || null,
         });
@@ -307,7 +311,19 @@ export function RiderFormProvider({ children, user, initialDraftId = null }) {
     };
 
     load();
-  }, [initialDraftId, user?.uid]);
+  }, [initialDraftId, user?.uid, initialQuickRideMode]);
+
+  useEffect(() => {
+    if (!initialQuickRideMode) return;
+    setFormData((prev) => {
+      if (prev.quickRideMode && String(prev.rentalPackage || "").toLowerCase() === "minute") return prev;
+      return {
+        ...prev,
+        quickRideMode: true,
+        rentalPackage: "minute",
+      };
+    });
+  }, [initialQuickRideMode]);
 
   const saveDraft = async (arg = { stepLabel: "Step 1", stepPath: "step-1" }) => {
     if (!user?.uid) throw new Error("User not available");
@@ -348,7 +364,7 @@ export function RiderFormProvider({ children, user, initialDraftId = null }) {
   };
 
   const resetForm = () => {
-    setFormData({ ...defaultFormData });
+    setFormData({ ...defaultFormData, quickRideMode: Boolean(initialQuickRideMode) });
     setErrors({});
     setDraftMeta(null);
     setDraftId(null);
@@ -368,6 +384,7 @@ export function RiderFormProvider({ children, user, initialDraftId = null }) {
         draftMeta,
         draftId,
         loadingDraft,
+        quickRideMode: Boolean(formData.quickRideMode),
         generateRiderUniqueId,
       }}
     >

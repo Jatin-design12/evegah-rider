@@ -34,7 +34,7 @@ const toDisplayDateTime = (value) => {
 };
 
 export default function Step2Identity() {
-  const { formData, updateForm, setFormData } = useRiderForm();
+  const { formData, updateForm, setFormData, quickRideMode } = useRiderForm();
   const navigate = useNavigate();
   const vehicleDropdownRef = useRef(null);
   const vehicleQueryRef = useRef(null);
@@ -139,6 +139,13 @@ export default function Step2Identity() {
     const now = toDateTimeLocal(new Date());
     setFormData((prev) => ({ ...prev, rentalStart: now }));
   }, [formData.rentalPackage]);
+
+  useEffect(() => {
+    if (!quickRideMode) return;
+    if (String(formData.rentalPackage || "").toLowerCase() !== "minute") {
+      updateForm({ rentalPackage: "minute" });
+    }
+  }, [quickRideMode, formData.rentalPackage, updateForm]);
 
   useEffect(() => {
     if (isDefaultBatteryModel) {
@@ -251,25 +258,36 @@ export default function Step2Identity() {
           <p className="text-sm text-gray-500">
             Fill rental plan, vehicle details, and accessories issued.
           </p>
+          {quickRideMode ? (
+            <p className="mt-1 text-xs font-medium text-blue-700">
+              Quick 10-min mode: package is locked and you can continue directly to payment.
+            </p>
+          ) : null}
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div>
             <label className="label">Rental Package</label>
-            <select
-              className="select"
-              value={formData.rentalPackage || "minute"}
-              onChange={(e) => updateForm({ rentalPackage: e.target.value })}
-            >
-              <option value="minute">Minute (10 min)</option>
-              <option value="hourly">Hourly</option>
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-            </select>
-            {attempted && !isNonEmpty(formData.rentalPackage) ? (
-              <p className="error">Select a rental package.</p>
-            ) : null}
+            {quickRideMode ? (
+              <input className="input" value="Minute (10 min)" readOnly />
+            ) : (
+              <>
+                <select
+                  className="select"
+                  value={formData.rentalPackage || "minute"}
+                  onChange={(e) => updateForm({ rentalPackage: e.target.value })}
+                >
+                  <option value="minute">Minute (10 min)</option>
+                  <option value="hourly">Hourly</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+                {attempted && !isNonEmpty(formData.rentalPackage) ? (
+                  <p className="error">Select a rental package.</p>
+                ) : null}
+              </>
+            )}
           </div>
 
           <div>
@@ -638,14 +656,31 @@ export default function Step2Identity() {
             ← Back
           </button>
 
-          <button
-            type="button"
-            className="btn-primary disabled:opacity-50"
-            onClick={handleNext}
-            disabled={!isValid}
-          >
-            Next →
-          </button>
+          <div className="flex items-center gap-2">
+            {quickRideMode ? (
+              <button
+                type="button"
+                className="btn-outline disabled:opacity-50"
+                onClick={() => {
+                  setAttempted(true);
+                  if (!isValid) return;
+                  navigate("../step-5");
+                }}
+                disabled={!isValid}
+              >
+                Continue to Payment
+              </button>
+            ) : null}
+
+            <button
+              type="button"
+              className="btn-primary disabled:opacity-50"
+              onClick={handleNext}
+              disabled={!isValid}
+            >
+              Next →
+            </button>
+          </div>
         </div>
       </div>
     </div>

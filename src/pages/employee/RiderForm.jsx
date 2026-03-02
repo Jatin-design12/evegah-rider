@@ -5,6 +5,7 @@ import {
   Navigate,
   useLocation,
   useNavigate,
+  useSearchParams,
   useParams,
 } from "react-router-dom";
 import EmployeeLayout from "../../components/layouts/EmployeeLayout";
@@ -230,12 +231,20 @@ function RiderStepProgress() {
 export default function RiderForm() {
   const { user, loading } = useAuth();
   const { draftId } = useParams();
+  const [searchParams] = useSearchParams();
+  const quickRideMode = ["1", "true", "yes"].includes(
+    String(searchParams.get("quick") || "").toLowerCase()
+  );
 
   if (loading) return null;
 
   return (
     <EmployeeLayout>
-      <RiderFormProvider user={user} initialDraftId={draftId || null}>
+      <RiderFormProvider
+        user={user}
+        initialDraftId={draftId || null}
+        initialQuickRideMode={quickRideMode}
+      >
         <div className="mx-auto w-full max-w-5xl space-y-6">
           <RiderStepProgress />
           <Routes>

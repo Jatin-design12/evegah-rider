@@ -945,13 +945,23 @@ export default function Dashboard() {
             </p>
           </div>
 
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => navigate("/employee/new-rider/step-1")}
-          >
-            New Rider →
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="btn-outline"
+              onClick={() => navigate("/employee/new-rider/step-1?quick=1")}
+            >
+              Quick 10-min Booking
+            </button>
+
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => navigate("/employee/new-rider/step-1")}
+            >
+              New Rider →
+            </button>
+          </div>
         </div>
 
         <div className="mt-4 overflow-x-auto">

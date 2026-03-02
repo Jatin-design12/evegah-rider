@@ -56,7 +56,7 @@ function formatDobToDDMMYYYY(dob) {
 }
 
 export default function Step1RiderDetails() {
-  const { formData, updateForm, errors, setErrors, saveDraft } =
+  const { formData, updateForm, errors, setErrors, saveDraft, quickRideMode } =
     useRiderForm();
   const navigate = useNavigate();
 
@@ -456,8 +456,8 @@ export default function Step1RiderDetails() {
       nextErrors.phone = "Enter a valid 10-digit mobile number";
     }
 
-    // Aadhaar is required only when an ID photo is NOT provided.
-    if (!hasGovernmentId) {
+    // Aadhaar is optional in quick mode; otherwise required when ID photo is not provided.
+    if (!quickRideMode && !hasGovernmentId) {
       if (!aadhaarDigits) {
         nextErrors.aadhaar = "Aadhaar number is required";
       } else if (!isValidAadhaarNumber(aadhaarDigits)) {
@@ -470,25 +470,27 @@ export default function Step1RiderDetails() {
       nextErrors.aadhaar = "Enter a valid 12-digit Aadhaar number";
     }
 
-    if (!permanentAddress) {
-      nextErrors.permanentAddress = "Permanent address is required";
-    }
-
-    if (!formData.sameAddress && !temporaryAddress) {
-      nextErrors.temporaryAddress = "Temporary address is required";
-    }
-
-    if (!formData.dob) {
-      nextErrors.dob = "Date of birth is required";
-    } else {
-      const age = calculateAge(formData.dob);
-      if (age !== "" && age < 16) {
-        nextErrors.dob = "Rider must be at least 16 years old.";
+    if (!quickRideMode) {
+      if (!permanentAddress) {
+        nextErrors.permanentAddress = "Permanent address is required";
       }
-    }
 
-    if (!formData.gender) {
-      nextErrors.gender = "Please select a gender";
+      if (!formData.sameAddress && !temporaryAddress) {
+        nextErrors.temporaryAddress = "Temporary address is required";
+      }
+
+      if (!formData.dob) {
+        nextErrors.dob = "Date of birth is required";
+      } else {
+        const age = calculateAge(formData.dob);
+        if (age !== "" && age < 16) {
+          nextErrors.dob = "Rider must be at least 16 years old.";
+        }
+      }
+
+      if (!formData.gender) {
+        nextErrors.gender = "Please select a gender";
+      }
     }
 
     setErrors(nextErrors);
@@ -547,6 +549,11 @@ export default function Step1RiderDetails() {
             <p className="text-sm text-gray-500">
               Personal and contact details for the rider.
             </p>
+            {quickRideMode ? (
+              <p className="mt-1 text-xs font-medium text-blue-700">
+                Quick 10-min mode: only essential fields are required in this step.
+              </p>
+            ) : null}
           </div>
 
           <div className="w-full md:w-auto">
@@ -608,129 +615,135 @@ export default function Step1RiderDetails() {
           </div>
         </div>
 
-        <div className={`grid grid-cols-1 gap-4 ${formData.sameAddress ? "md:grid-cols-1" : "md:grid-cols-2"}`}>
-          <div>
-            <label className="label">Resident Address *</label>
-            <textarea
-              className="textarea"
-              rows={3}
-              placeholder="House no, Street, Area, City, Pincode"
-              value={formData.permanentAddress}
-              onChange={(e) => {
-                const value = e.target.value;
-                updateForm({
-                  permanentAddress: value,
-                  ...(formData.sameAddress ? { temporaryAddress: value } : {}),
-                });
-                clearFieldError("permanentAddress");
-                if (formData.sameAddress) clearFieldError("temporaryAddress");
-              }}
-            />
-            {errors.permanentAddress && (
-              <p className="error">{errors.permanentAddress}</p>
-            )}
-          </div>
+        {!quickRideMode ? (
+          <>
+            <div className={`grid grid-cols-1 gap-4 ${formData.sameAddress ? "md:grid-cols-1" : "md:grid-cols-2"}`}>
+              <div>
+                <label className="label">Resident Address *</label>
+                <textarea
+                  className="textarea"
+                  rows={3}
+                  placeholder="House no, Street, Area, City, Pincode"
+                  value={formData.permanentAddress}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    updateForm({
+                      permanentAddress: value,
+                      ...(formData.sameAddress ? { temporaryAddress: value } : {}),
+                    });
+                    clearFieldError("permanentAddress");
+                    if (formData.sameAddress) clearFieldError("temporaryAddress");
+                  }}
+                />
+                {errors.permanentAddress && (
+                  <p className="error">{errors.permanentAddress}</p>
+                )}
+              </div>
 
-          {!formData.sameAddress && (
-            <div>
-              <label className="label">Permanent Address *</label>
-              <textarea
-                className="textarea"
-                rows={3}
-                placeholder="House no, Street, Area, City, Pincode"
-                value={formData.temporaryAddress}
-                onChange={(e) => {
-                  updateForm({ temporaryAddress: e.target.value });
-                  clearFieldError("temporaryAddress");
-                }}
-              />
-              {errors.temporaryAddress && (
-                <p className="error">{errors.temporaryAddress}</p>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="pt-1">
-          <label className="flex items-center gap-2 text-sm text-evegah-text font-medium">
-            <input
-              type="checkbox"
-              className="checkbox"
-              checked={formData.sameAddress}
-              onChange={(e) => {
-                const checked = e.target.checked;
-                if (checked) {
-                  tempAddressCache.current = formData.temporaryAddress;
-                  updateForm({
-                    sameAddress: true,
-                    temporaryAddress: formData.permanentAddress,
-                  });
-                  clearFieldError("temporaryAddress");
-                } else {
-                  updateForm({
-                    sameAddress: false,
-                    temporaryAddress: tempAddressCache.current || "",
-                  });
-                }
-              }}
-            />
-            My Resident address is the same as my permanent address.
-          </label>
-        </div>
-
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div>
-            <label className="label">Reference Name / Number</label>
-            <input
-              className="input"
-              value={formData.reference}
-              onChange={(e) => {
-                updateForm({ reference: e.target.value });
-              }}
-            />
-          </div>
-
-          <div>
-            <label className="label">Date of Birth *</label>
-            <input
-              type="date"
-              className="input"
-              value={formData.dob ? (() => { try { return new Date(formData.dob).toISOString().split('T')[0]; } catch { return ''; } })() : ''}
-              onChange={(e) => {
-                updateForm({ dob: e.target.value });
-                clearFieldError("dob");
-              }}
-              max={new Date().toISOString().split("T")[0]}
-              inputMode="numeric"
-              pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}"
-              placeholder="YYYY-MM-DD"
-            />
-            {errors.dob && <p className="error">{errors.dob}</p>}
-          </div>
-
-          <div>
-            <label className="label">Gender *</label>
-            <div className="flex gap-4 mt-2">
-              {["Male", "Female", "Other"].map((g) => (
-                <label key={g} className="flex items-center gap-1 text-sm">
-                  <input
-                    type="radio"
-                    className="radio"
-                    name="gender"
-                    value={g}
-                    checked={formData.gender === g}
-                    onChange={() => {
-                      updateForm({ gender: g });
-                      clearFieldError("gender");
+              {!formData.sameAddress && (
+                <div>
+                  <label className="label">Permanent Address *</label>
+                  <textarea
+                    className="textarea"
+                    rows={3}
+                    placeholder="House no, Street, Area, City, Pincode"
+                    value={formData.temporaryAddress}
+                    onChange={(e) => {
+                      updateForm({ temporaryAddress: e.target.value });
+                      clearFieldError("temporaryAddress");
                     }}
                   />
-                  {g}
-                </label>
-              ))}
+                  {errors.temporaryAddress && (
+                    <p className="error">{errors.temporaryAddress}</p>
+                  )}
+                </div>
+              )}
             </div>
-            {errors.gender && <p className="error">{errors.gender}</p>}
+
+            <div className="pt-1">
+              <label className="flex items-center gap-2 text-sm text-evegah-text font-medium">
+                <input
+                  type="checkbox"
+                  className="checkbox"
+                  checked={formData.sameAddress}
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    if (checked) {
+                      tempAddressCache.current = formData.temporaryAddress;
+                      updateForm({
+                        sameAddress: true,
+                        temporaryAddress: formData.permanentAddress,
+                      });
+                      clearFieldError("temporaryAddress");
+                    } else {
+                      updateForm({
+                        sameAddress: false,
+                        temporaryAddress: tempAddressCache.current || "",
+                      });
+                    }
+                  }}
+                />
+                My Resident address is the same as my permanent address.
+              </label>
+            </div>
+          </>
+        ) : null}
+
+        {!quickRideMode ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <div>
+              <label className="label">Reference Name / Number</label>
+              <input
+                className="input"
+                value={formData.reference}
+                onChange={(e) => {
+                  updateForm({ reference: e.target.value });
+                }}
+              />
+            </div>
+
+            <div>
+              <label className="label">Date of Birth *</label>
+              <input
+                type="date"
+                className="input"
+                value={formData.dob ? (() => { try { return new Date(formData.dob).toISOString().split('T')[0]; } catch { return ''; } })() : ''}
+                onChange={(e) => {
+                  updateForm({ dob: e.target.value });
+                  clearFieldError("dob");
+                }}
+                max={new Date().toISOString().split("T")[0]}
+                inputMode="numeric"
+                pattern="[0-9]{4}-[0-9]{2}-[0-9]{2}"
+                placeholder="YYYY-MM-DD"
+              />
+              {errors.dob && <p className="error">{errors.dob}</p>}
+            </div>
+
+            <div>
+              <label className="label">Gender *</label>
+              <div className="flex gap-4 mt-2">
+                {["Male", "Female", "Other"].map((g) => (
+                  <label key={g} className="flex items-center gap-1 text-sm">
+                    <input
+                      type="radio"
+                      className="radio"
+                      name="gender"
+                      value={g}
+                      checked={formData.gender === g}
+                      onChange={() => {
+                        updateForm({ gender: g });
+                        clearFieldError("gender");
+                      }}
+                    />
+                    {g}
+                  </label>
+                ))}
+              </div>
+              {errors.gender && <p className="error">{errors.gender}</p>}
+            </div>
           </div>
-        </div>
+        ) : null}
 
         <div className="rounded-xl border border-evegah-border bg-white p-4 space-y-4">
           <h3 className="font-medium text-evegah-text">Identity Verification</h3>

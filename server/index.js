@@ -613,6 +613,12 @@ function normalizeIdForCompare(value) {
     .toUpperCase();
 }
 
+const DEFAULT_SHARED_BATTERY_ID = "DEFAULT";
+
+function isSharedDefaultBatteryId(value) {
+  return normalizeIdForCompare(value) === DEFAULT_SHARED_BATTERY_ID;
+}
+
 async function getActiveAvailability({ client }) {
   const q = await client.query(
     `with active_rentals as (
@@ -648,7 +654,9 @@ async function getActiveAvailability({ client }) {
   const row = q.rows?.[0] || {};
   const vehicleIds = Array.isArray(row.vehicle_ids) ? row.vehicle_ids : [];
   const vehicleNumbers = Array.isArray(row.vehicle_numbers) ? row.vehicle_numbers : [];
-  const batteryIds = Array.isArray(row.battery_ids) ? row.battery_ids : [];
+  const batteryIds = (Array.isArray(row.battery_ids) ? row.battery_ids : []).filter(
+    (id) => !isSharedDefaultBatteryId(id)
+  );
 
   const vehicleIdSet = new Set(vehicleIds.map(normalizeIdForCompare).filter(Boolean));
   const vehicleNumberSet = new Set(vehicleNumbers.map(normalizeIdForCompare).filter(Boolean));
@@ -3351,7 +3359,11 @@ app.post("/api/rentals", async (req, res) => {
       await client.query("rollback");
       return res.status(409).json({ error: "Selected vehicle is unavailable (already in an active rental)." });
     }
-    if (requestedBatteryId && availability.unavailableBatteryIdSet.has(requestedBatteryId)) {
+    if (
+      requestedBatteryId &&
+      !isSharedDefaultBatteryId(requestedBatteryId) &&
+      availability.unavailableBatteryIdSet.has(requestedBatteryId)
+    ) {
       await client.query("rollback");
       return res.status(409).json({ error: "Selected battery is unavailable (already in an active rental)." });
     }
@@ -5344,7 +5356,11 @@ app.post("/api/registrations/new-rider", async (req, res) => {
       await client.query("rollback");
       return res.status(409).json({ error: "Selected vehicle is unavailable (already in an active rental)." });
     }
-    if (requestedBatteryId && availability.unavailableBatteryIdSet.has(requestedBatteryId)) {
+    if (
+      requestedBatteryId &&
+      !isSharedDefaultBatteryId(requestedBatteryId) &&
+      availability.unavailableBatteryIdSet.has(requestedBatteryId)
+    ) {
       await client.query("rollback");
       return res.status(409).json({ error: "Selected battery is unavailable (already in an active rental)." });
     }
