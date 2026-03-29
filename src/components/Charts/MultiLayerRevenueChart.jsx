@@ -41,8 +41,8 @@ export default function MultiLayerRevenueChart({ data }) {
           }}
         />
         <Legend />
-        <Bar yAxisId="left" dataKey="rentals" fill="#60a5fa" radius={[6, 6, 0, 0]} name="Rentals" />
-        <Line yAxisId="left" type="monotone" dataKey="revenue" stroke="#f59e42" strokeWidth={3} dot={false} name="Revenue" />
+        <Bar yAxisId="left" dataKey="rentals" fill="#7c6bc4" radius={[6, 6, 0, 0]} name="Rentals" />
+        <Line yAxisId="left" type="monotone" dataKey="revenue" stroke="#2A195C" strokeWidth={3} dot={false} name="Revenue" />
       </LineChart>
     </ResponsiveContainer>
   );

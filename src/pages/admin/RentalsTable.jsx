@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import AdminSidebar from "../../components/admin/AdminSidebar";
+import AdminTopbar from "../../components/admin/AdminTopbar";
 import { apiFetch } from "../../config/api";
 import { Search, FileText, Play, CheckCircle, DollarSign, Receipt, RefreshCw, Download, Columns } from "lucide-react";
 import { formatRentalId } from "../../utils/entityId";
@@ -131,6 +132,17 @@ export default function RentalsTable() {
 
   const load = async ({ showLoading } = {}) => {
     if (showLoading) setLoading(true);
+
+    if (import.meta.env.VITE_MODE === 'dev') {
+      setData([
+        { id: "1", rider_full_name: "John Doe", rider_mobile: "9876543210", bike_id: "E-BIKE-1", battery_id: "BAT-1", zone: "Gotri", start_time: new Date(Date.now() - 3600000).toISOString(), expected_end_time: new Date(Date.now() + 3600000).toISOString(), deposit_amount: 500, rental_amount: 200, total_amount: 700, status_display: "Active" },
+        { id: "2", rider_full_name: "Jane Smith", rider_mobile: "8765432109", bike_id: "E-BIKE-2", battery_id: "BAT-2", zone: "Manjalpur", start_time: new Date(Date.now() - 86400000).toISOString(), returned_at: new Date().toISOString(), deposit_amount: 500, rental_amount: 200, total_amount: 700, status_display: "Returned" },
+        { id: "3", rider_full_name: "Rahul Kumar", rider_mobile: "7654321098", bike_id: "E-BIKE-3", battery_id: "BAT-3", zone: "Karelibaug", start_time: new Date(Date.now() - 172800000).toISOString(), returned_at: new Date(Date.now() - 86400000).toISOString(), deposit_amount: 500, rental_amount: 200, total_amount: 700, status_display: "Returned" }
+      ]);
+      if (showLoading) setLoading(false);
+      return;
+    }
+
     try {
       const rows = await apiFetch("/api/rentals");
       setData(rows || []);
@@ -462,7 +474,9 @@ export default function RentalsTable() {
     <div className="h-screen w-full flex bg-white relative overflow-hidden">
       <div className="flex relative z-10 w-full">
         <AdminSidebar />
-        <main className="flex-1 w-full min-w-0 p-10 px-10 overflow-x-hidden sm:ml-[var(--admin-sidebar-width,16rem)]" style={{ zoom: "0.95" }}>
+        <main className="flex-1 w-full min-w-0 overflow-x-hidden sm:ml-[var(--admin-sidebar-width,16rem)]" style={{ zoom: "0.95" }}>
+          <AdminTopbar />
+          <div className="p-10 px-10">
           <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
             <h1 className="text-3xl font-bold text-evegah-primary tracking-tight">
               Active Rentals
@@ -804,6 +818,7 @@ export default function RentalsTable() {
                 Next
               </button>
             </div>
+          </div>
           </div>
         </main>
       </div>

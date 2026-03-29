@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import AdminSidebar from "../../components/admin/AdminSidebar";
+import AdminTopbar from "../../components/admin/AdminTopbar";
 import { createAuthUser, deleteAuthUser, listAuthUsers, updateAuthUser } from "../../utils/adminUsers";
 import { Edit, RefreshCw, Search, Trash2, UserPlus } from "lucide-react";
 
@@ -57,6 +58,17 @@ export default function AdminUsers() {
   const load = async () => {
     setError("");
     setLoading(true);
+
+    if (import.meta.env.VITE_MODE === 'dev') {
+      setUsers([
+        { uid: "1", email: "admin@example.com", displayName: "Admin User", role: "admin", disabled: false },
+        { uid: "2", email: "employee@example.com", displayName: "Employee User", role: "employee", disabled: false },
+        { uid: "3", email: "test@example.com", displayName: "Test User", role: "employee", disabled: true }
+      ]);
+      setLoading(false);
+      return;
+    }
+
     try {
       const data = await listAuthUsers();
       setUsers(Array.isArray(data?.users) ? data.users : []);
@@ -202,7 +214,9 @@ export default function AdminUsers() {
     <div className="h-screen w-full flex bg-white relative overflow-hidden">
       <div className="flex relative z-10 w-full">
         <AdminSidebar />
-        <main className="flex-1 w-full min-w-0 p-8 pb-0 overflow-x-hidden overflow-y-auto sm:ml-[var(--admin-sidebar-width,16rem)] space-y-6">
+        <main className="flex-1 w-full min-w-0 pb-0 overflow-x-hidden overflow-y-auto sm:ml-[var(--admin-sidebar-width,16rem)]">
+          <AdminTopbar />
+          <div className="p-8 space-y-6">
           <div className="mb-2 flex flex-wrap items-start justify-between gap-4">
             <div>
               <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Employee</h1>
@@ -521,6 +535,7 @@ export default function AdminUsers() {
               </div>
             </div>
           </Modal>
+          </div>
         </main>
       </div>
     </div>

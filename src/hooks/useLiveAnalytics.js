@@ -13,6 +13,39 @@ export default function useLiveAnalytics({ zone, date, days = 14, autoRefresh = 
     setLoading(true);
     setError(null);
 
+    if (import.meta.env.VITE_MODE === 'dev') {
+      setRidersData([
+        { date: "2026-03-22", day: "Sun", total: 45 },
+        { date: "2026-03-23", day: "Mon", total: 52 },
+        { date: "2026-03-24", day: "Tue", total: 38 },
+        { date: "2026-03-25", day: "Wed", total: 61 },
+        { date: "2026-03-26", day: "Thu", total: 59 },
+        { date: "2026-03-27", day: "Fri", total: 72 },
+        { date: "2026-03-28", day: "Sat", total: 85 }
+      ]);
+      setEarningsData([
+        { date: "2026-03-22", amount: 15400 },
+        { date: "2026-03-23", amount: 18200 },
+        { date: "2026-03-24", amount: 12500 },
+        { date: "2026-03-25", amount: 21000 },
+        { date: "2026-03-26", amount: 19800 },
+        { date: "2026-03-27", amount: 25600 },
+        { date: "2026-03-28", amount: 31000 }
+      ]);
+      setZoneData([
+        { zone: "Gotri", value: 120 },
+        { zone: "Manjalpur", value: 85 },
+        { zone: "Karelibaug", value: 65 },
+        { zone: "Akota", value: 40 }
+      ]);
+      setActiveZoneCounts({
+        zones: ["Gotri", "Manjalpur", "Karelibaug", "Akota"],
+        counts: { Gotri: 25, Manjalpur: 18, Karelibaug: 12, Akota: 8 }
+      });
+      setLoading(false);
+      return;
+    }
+
     try {
       const qsRiders = new URLSearchParams();
       qsRiders.set("days", String(days));

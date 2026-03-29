@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AdminSidebar from "../../components/admin/AdminSidebar";
+import AdminTopbar from "../../components/admin/AdminTopbar";
 import { apiFetch } from "../../config/api";
 import { ChevronLeft, ChevronRight, Package, DollarSign, Search, Download, RefreshCw, Columns } from "lucide-react";
 import { formatRentalId, formatReturnId } from "../../utils/entityId";
@@ -55,6 +56,16 @@ export default function ReturnsTable() {
   const load = async ({ showLoading } = {}) => {
     if (showLoading) setLoading(true);
     setError("");
+
+    if (import.meta.env.VITE_MODE === 'dev') {
+      setData([
+        { return_id: "RET-1", rental_id: "RNT-101", rider_full_name: "John Doe", rider_mobile: "9876543210", bike_id: "E-BIKE-1", battery_id: "BAT-1", start_time: new Date(Date.now() - 86400000).toISOString(), returned_at: new Date().toISOString(), deposit_returned: true, deposit_returned_amount: 500, condition_notes: "Good condition", return_meta: JSON.stringify({ feedback: "Great service!" }) },
+        { return_id: "RET-2", rental_id: "RNT-102", rider_full_name: "Jane Smith", rider_mobile: "8765432109", bike_id: "E-BIKE-2", battery_id: "BAT-2", start_time: new Date(Date.now() - 172800000).toISOString(), returned_at: new Date(Date.now() - 86400000).toISOString(), deposit_returned: false, deposit_returned_amount: 0, condition_notes: "Scratch on mirror", return_meta: JSON.stringify({ feedback: "Okay experience" }) }
+      ]);
+      if (showLoading) setLoading(false);
+      return;
+    }
+
     try {
       const rows = await apiFetch("/api/returns");
       setData(rows || []);
@@ -386,7 +397,9 @@ export default function ReturnsTable() {
     <div className="h-screen w-full flex bg-white relative overflow-hidden">
       <div className="flex relative z-10 w-full">
         <AdminSidebar />
-        <main className="flex-1 w-full min-w-0 overflow-y-auto relative z-10 p-8 pb-0 overflow-x-hidden sm:ml-[var(--admin-sidebar-width,16rem)]">
+        <main className="flex-1 w-full min-w-0 overflow-y-auto relative z-10 pb-0 overflow-x-hidden sm:ml-[var(--admin-sidebar-width,16rem)]">
+          <AdminTopbar />
+          <div className="p-8">
           <div className="p-6 pb-0 space-y-8">
             {/* Hero Header */}
             <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
@@ -662,6 +675,7 @@ export default function ReturnsTable() {
                 </button>
               </div>
             </div>
+          </div>
           </div>
         </main>
       </div>

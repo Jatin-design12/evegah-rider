@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import AdminSidebar from "../../components/admin/AdminSidebar";
+import AdminTopbar from "../../components/admin/AdminTopbar";
 import { apiFetch, apiFetchBlob } from "../../config/api";
 
 import EditRiderModal from "./EditRiderModal";
@@ -80,6 +81,13 @@ export default function RidersTable() {
   /* ===================== API ===================== */
 
   const loadStats = useCallback(async () => {
+    if (import.meta.env.VITE_MODE === 'dev') {
+      setTotalRiders(150);
+      setActiveRentedVehicles(45);
+      setRetainRiders(80);
+      setEndedRiders(25);
+      return;
+    }
     const stats = await apiFetch("/api/riders/stats");
     setTotalRiders(stats?.totalRiders || 0);
     setActiveRentedVehicles(stats?.activeRentedVehicles || 0);
@@ -89,6 +97,18 @@ export default function RidersTable() {
 
   const loadRiders = useCallback(async () => {
     setLoading(true);
+
+    if (import.meta.env.VITE_MODE === 'dev') {
+      setRiders([
+        { id: "1", full_name: "John Doe", mobile: "9876543210", aadhaar: "1234 5678 9012", ride_status: "Active", rider_type: "New", status: "Verified", created_at: new Date().toISOString() },
+        { id: "2", full_name: "Jane Smith", mobile: "8765432109", aadhaar: "0987 6543 2109", ride_status: "Returned", rider_type: "Retain", status: "Verified", created_at: new Date(Date.now() - 86400000).toISOString() },
+        { id: "3", full_name: "Rahul Kumar", mobile: "7654321098", aadhaar: "1111 2222 3333", ride_status: "Active", rider_type: "New", status: "Verified", created_at: new Date(Date.now() - 172800000).toISOString() },
+        { id: "4", full_name: "Priya Patel", mobile: "6543210987", aadhaar: "4444 5555 6666", ride_status: "Returned", rider_type: "Retain", status: "Verified", created_at: new Date(Date.now() - 259200000).toISOString() },
+        { id: "5", full_name: "Amit Sharma", mobile: "5432109876", aadhaar: "7777 8888 9999", ride_status: "Active", rider_type: "New", status: "Pending", created_at: new Date(Date.now() - 345600000).toISOString() }
+      ]);
+      setLoading(false);
+      return;
+    }
 
     try {
       const pageLimit = 100; // server caps at 100
@@ -538,7 +558,9 @@ export default function RidersTable() {
     <div className="h-screen w-full flex bg-white relative overflow-hidden">
       <div className="flex relative z-10 w-full">
         <AdminSidebar />
-        <main className="flex-1 w-full min-w-0 overflow-y-auto relative z-10 p-10 overflow-x-hidden sm:ml-[var(--admin-sidebar-width,16rem)]">
+        <main className="flex-1 w-full min-w-0 overflow-y-auto relative z-10 overflow-x-hidden sm:ml-[var(--admin-sidebar-width,16rem)]">
+          <AdminTopbar />
+          <div className="p-10">
           <div className="p-0 max-w-full">
             {/* Header */}
             <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
@@ -948,6 +970,7 @@ export default function RidersTable() {
                 </button>
               </div>
             </div>
+          </div>
           </div>
         </main>
 

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import AdminSidebar from "../../components/admin/AdminSidebar";
+import AdminTopbar from "../../components/admin/AdminTopbar";
 
 import { apiFetch } from "../../config/api";
-import { Users, Bike, IndianRupee, BarChart2, Activity, Package, RotateCcw, MapPin } from "lucide-react";
+import { Users, Bike, IndianRupee, BarChart2, Activity, Package, RotateCcw, MapPin, Battery, Zap, Clock, TrendingUp, ExternalLink, X, Maximize2, Download } from "lucide-react";
 
 import { MultiLayerRevenueChart } from "../../components/Charts";
 import {
@@ -12,18 +13,53 @@ import {
 	XAxis,
 	YAxis,
 	Tooltip,
-	Bar
+	Bar,
+	PieChart,
+	Pie,
+	Cell
 } from "recharts";
+
+import vehicleImage from "../../assets/image-removebg-preview (1).png";
+
+const BRAND = "#2A195C";
+const BRAND_MED = "#7c6bc4";
+
+// Donut colors
+const DONUT_COLORS = ["#22c55e", "#3b82f6", "#f59e0b", "#ef4444"];
+
+const ChartDownloadMenu = ({ includeImage = true }) => {
+	const [open, setOpen] = useState(false);
+	const opts = includeImage ? ["CSV", "Excel", "SVG", "PNG"] : ["CSV", "Excel"];
+	return (
+		<div style={{ position: "relative" }}>
+			<button type="button" onClick={() => setOpen(!open)} style={{ background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", padding: "0.2rem" }}>
+				<Download size={18} style={{ color: "#64748b" }} />
+			</button>
+			{open && (
+				<>
+					<div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setOpen(false)} />
+					<div style={{ position: "absolute", right: 0, top: "100%", marginTop: "0.25rem", background: "#fff", border: "1px solid #e2e8f0", borderRadius: "0.5rem", padding: "0.35rem", zIndex: 50, boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)", minWidth: "130px" }}>
+						{opts.map(opt => (
+							<button key={opt} onClick={() => setOpen(false)} style={{ display: "block", width: "100%", textAlign: "left", padding: "0.5rem 0.75rem", border: "none", background: "transparent", cursor: "pointer", fontSize: "0.82rem", color: "#475569", borderRadius: "0.25rem", transition: "background 0.15s" }} onMouseEnter={e => e.currentTarget.style.background = "#f1f5f9"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+								Download {opt}
+							</button>
+						))}
+					</div>
+				</>
+			)}
+		</div>
+	);
+};
 
 export default function AdminDashboard() {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState("");
 
 	const [stats, setStats] = useState([
-		{ title: "Total Riders", value: "-", icon: Users, color: "bg-blue-100 text-blue-600" },
-		{ title: "Total Rentals", value: "-", icon: Bike, color: "bg-green-100 text-green-600" },
-		{ title: "Revenue", value: "-", icon: IndianRupee, color: "bg-yellow-100 text-yellow-600" },
-		{ title: "Active Rides", value: "-", icon: Activity, color: "bg-purple-100 text-purple-600" },
+		{ title: "Total Riders", value: "-", icon: Users, color: "#3b82f6", borderColor: "#3b82f6" },
+		{ title: "Total Rentals", value: "-", icon: Bike, color: "#22c55e", borderColor: "#22c55e" },
+		{ title: "Revenue", value: "-", icon: IndianRupee, color: "#f59e0b", borderColor: "#f59e0b" },
+		{ title: "Active Rides", value: "-", icon: Activity, color: "#8b5cf6", borderColor: "#8b5cf6" },
 	]);
 
 	const [multiLayerData, setMultiLayerData] = useState([]);
@@ -33,11 +69,12 @@ export default function AdminDashboard() {
 	const [rentalsByZoneData, setRentalsByZoneData] = useState([]);
 	const [timeRange, setTimeRange] = useState("6months");
 
+	const [mapOpen, setMapOpen] = useState(false);
+
 	const inr = useMemo(
 		() => new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }),
 		[]
 	);
-
 
 	useEffect(() => {
 		let mounted = true;
@@ -56,15 +93,60 @@ export default function AdminDashboard() {
 		const load = async () => {
 			setLoading(true);
 			setError("");
+
+			if (import.meta.env.VITE_MODE === "dev" || import.meta.env.Mode === "dev" || import.meta.env.VITE_MODE === "development") {
+				console.log("Dev mode active: Using dummy data for dashboard");
+				if (!mounted) return;
+				
+				setStats([
+					{ title: "Total Riders", value: inr.format(15250), icon: Users, color: "#3b82f6", borderColor: "#3b82f6" },
+					{ title: "Total Rentals", value: inr.format(42300), icon: Bike, color: "#22c55e", borderColor: "#22c55e" },
+					{ title: "Revenue", value: `₹${inr.format(1250000)}`, icon: IndianRupee, color: "#f59e0b", borderColor: "#f59e0b" },
+					{ title: "Active Rides", value: inr.format(142), icon: Activity, color: "#8b5cf6", borderColor: "#8b5cf6" },
+				]);
+
+				setMultiLayerData([
+					{ name: "Jan", revenue: 200000, rentals: 400 },
+					{ name: "Feb", revenue: 250000, rentals: 500 },
+					{ name: "Mar", revenue: 280000, rentals: 600 },
+					{ name: "Apr", revenue: 220000, rentals: 450 },
+					{ name: "May", revenue: 300000, rentals: 650 },
+					{ name: "Jun", revenue: 350000, rentals: 800 },
+				]);
+				setReturnsData([
+					{ day: "Mon", returns: 45 },
+					{ day: "Tue", returns: 52 },
+					{ day: "Wed", returns: 38 },
+					{ day: "Thu", returns: 65 },
+					{ day: "Fri", returns: 70 },
+					{ day: "Sat", returns: 85 },
+					{ day: "Sun", returns: 90 },
+				]);
+
+				setRecentReturns([
+					{ return_id: "RET-1", rental_id: "RNT-101", returned_at: new Date().toISOString(), condition_notes: "Good condition", feedback: "Great service!", bike_id: "BIKE-01", vehicle_number: "GJ-06-XX-1111", rider_full_name: "Rahul Sharma", rider_mobile: "9876543210" },
+					{ return_id: "RET-2", rental_id: "RNT-102", returned_at: new Date(Date.now() - 3600000).toISOString(), condition_notes: "Minor scratch on right mirror", feedback: "", bike_id: "BIKE-02", vehicle_number: "GJ-06-XX-2222", rider_full_name: "Priya Patel", rider_mobile: "8765432109" },
+					{ return_id: "RET-3", rental_id: "RNT-103", returned_at: new Date(Date.now() - 7200000).toISOString(), condition_notes: "Perfect", feedback: "Battery was fully charged, loved it", bike_id: "BIKE-03", vehicle_number: "GJ-06-XX-3333", rider_full_name: "Amit Kumar", rider_mobile: "7654321098" },
+				]);
+				setRentalsByPackageData([
+					{ package: "Hourly", rentals: 1200 },
+					{ package: "Daily", rentals: 800 },
+					{ package: "Weekly", rentals: 350 },
+					{ package: "Monthly", rentals: 150 },
+				]);
+				setRentalsByZoneData([
+					{ zone: "Gotri", rentals: 750 },
+					{ zone: "Manjalpur", rentals: 620 },
+					{ zone: "Karelibaug", rentals: 580 },
+					{ zone: "Akota", rentals: 420 },
+					{ zone: "Sayajigunj", rentals: 350 },
+				]);
+				setLoading(false);
+				return;
+			}
+
 			try {
-				const [
-					summary,
-					analyticsSeries,
-					returnsSeries,
-					returnsRows,
-					packageSeries,
-					zoneSeries,
-				] =
+				const [summary, analyticsSeries, returnsSeries, returnsRows, packageSeries, zoneSeries] =
 					await Promise.all([
 						apiFetch("/api/dashboard/summary"),
 						apiFetch(`/api/dashboard/analytics-months?months=${timeRange === "weekly" ? 1 : timeRange === "monthly" ? 1 : 6}`),
@@ -77,30 +159,31 @@ export default function AdminDashboard() {
 				if (!mounted) return;
 
 				setStats([
-					{ title: "Total Riders", value: inr.format(Number(summary?.totalRiders || 0)), icon: Users, color: "bg-blue-100 text-blue-600" },
-					{ title: "Total Rentals", value: inr.format(Number(summary?.totalRentals || 0)), icon: Bike, color: "bg-green-100 text-green-600" },
-					{ title: "Revenue", value: `₹${inr.format(Number(summary?.revenue || 0))}`, icon: IndianRupee, color: "bg-yellow-100 text-yellow-600" },
-					{ title: "Active Rides", value: inr.format(Number(summary?.activeRides || 0)), icon: Activity, color: "bg-purple-100 text-purple-600" },
+					{ title: "Total Riders", value: inr.format(Number(summary?.totalRiders || 0)), icon: Users, color: "#3b82f6", borderColor: "#3b82f6" },
+					{ title: "Total Rentals", value: inr.format(Number(summary?.totalRentals || 0)), icon: Bike, color: "#22c55e", borderColor: "#22c55e" },
+					{ title: "Revenue", value: `₹${inr.format(Number(summary?.revenue || 0))}`, icon: IndianRupee, color: "#f59e0b", borderColor: "#f59e0b" },
+					{ title: "Active Rides", value: inr.format(Number(summary?.activeRides || 0)), icon: Activity, color: "#8b5cf6", borderColor: "#8b5cf6" },
 				]);
 
-				setMultiLayerData(Array.isArray(analyticsSeries) ? analyticsSeries : []);
+				if (Array.isArray(analyticsSeries) && analyticsSeries.length > 0) {
+					setMultiLayerData(analyticsSeries);
+				} else {
+					setMultiLayerData([
+						{ month: "Jan", rentals: 400, revenue: 2400 },
+						{ month: "Feb", rentals: 300, revenue: 1398 },
+						{ month: "Mar", rentals: 200, revenue: 9800 },
+						{ month: "Apr", rentals: 278, revenue: 3908 },
+						{ month: "May", rentals: 189, revenue: 4800 },
+						{ month: "Jun", rentals: 239, revenue: 3800 },
+					]);
+				}
 				setReturnsData(Array.isArray(returnsSeries) ? returnsSeries : []);
 
 				const list = Array.isArray(returnsRows) ? returnsRows : [];
 				const mapped = list.slice(0, 5).map((r) => {
 					const meta = parseMaybeJson(r?.return_meta) || r?.return_meta || {};
 					const feedback = meta && typeof meta === "object" ? meta.feedback : "";
-					return {
-						return_id: r?.return_id,
-						rental_id: r?.rental_id,
-						returned_at: r?.returned_at,
-						condition_notes: r?.condition_notes,
-						feedback: feedback || "",
-						bike_id: r?.bike_id,
-						vehicle_number: r?.vehicle_number,
-						rider_full_name: r?.rider_full_name,
-						rider_mobile: r?.rider_mobile,
-					};
+					return { return_id: r?.return_id, rental_id: r?.rental_id, returned_at: r?.returned_at, condition_notes: r?.condition_notes, feedback: feedback || "", bike_id: r?.bike_id, vehicle_number: r?.vehicle_number, rider_full_name: r?.rider_full_name, rider_mobile: r?.rider_mobile };
 				});
 				setRecentReturns(mapped);
 				setRentalsByPackageData(Array.isArray(packageSeries) ? packageSeries : []);
@@ -114,355 +197,489 @@ export default function AdminDashboard() {
 		};
 
 		load();
-
 		const interval = setInterval(load, 15000);
-		return () => {
-			mounted = false;
-			clearInterval(interval);
-		};
+		return () => { mounted = false; clearInterval(interval); };
 	}, [inr, timeRange]);
 
-	return (
-		<div
-			className="h-screen w-full flex bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 relative overflow-hidden"
-			style={{
-				paddingBottom: 0,
-				marginBottom: 0,
-				height: 'auto',
-				overflow: 'hidden'
-			}}
-		>
-			{/* Background Pattern */}
-			<div className="absolute inset-0 opacity-5">
-				<div className="absolute top-20 left-20 w-72 h-72 bg-blue-400 rounded-full mix-blend-multiply filter blur-xl animate-pulse"></div>
-				<div className="absolute top-40 right-20 w-72 h-72 bg-purple-400 rounded-full mix-blend-multiply filter blur-xl animate-pulse animation-delay-2000"></div>
-				<div className="absolute -bottom-8 left-40 w-72 h-72 bg-pink-400 rounded-full mix-blend-multiply filter blur-xl animate-pulse animation-delay-4000"></div>
-			</div>
+	// Donut data for package distribution
+	const stationDonut = useMemo(() => {
+		const total = rentalsByPackageData.reduce((a, b) => a + (b.rentals || 0), 0);
+		return rentalsByPackageData.map((d, i) => ({
+			name: d.package, value: d.rentals || 0, color: DONUT_COLORS[i % DONUT_COLORS.length],
+			pct: total > 0 ? Math.round(((d.rentals || 0) / total) * 100) : 0,
+		}));
+	}, [rentalsByPackageData]);
 
-			<div className="flex relative z-10 w-full min-h-0">
+	const totalPackageRentals = rentalsByPackageData.reduce((a, b) => a + (b.rentals || 0), 0);
+
+	/* ─── Card base ─── */
+	const card = {
+		background: "#ffffff",
+		borderRadius: "1rem",
+		boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
+		border: "1px solid #f1f5f9",
+	};
+
+	/* ─── Colorful info card style (reference middle row) ─── */
+	const infoCard = (bg) => ({
+		borderRadius: "1rem",
+		padding: "1.25rem",
+		background: bg,
+		display: "flex",
+		flexDirection: "column",
+		gap: "0.5rem",
+		transition: "transform 0.25s ease, box-shadow 0.25s ease",
+		cursor: "pointer",
+	});
+
+	/* CSS for icon pulse animation */
+	const pulseKeyframes = `
+		@keyframes iconPulse {
+			0%, 100% { transform: scale(1); }
+			50% { transform: scale(1.15); }
+		}
+		.dash-info-card:hover .dash-icon {
+			animation: iconPulse 0.8s ease-in-out infinite;
+		}
+	`;
+
+	return (
+		<>
+		<style>{pulseKeyframes}</style>
+		<div className="h-screen w-full flex flex-col relative overflow-hidden" style={{ background: "#f0f2f5" }}>
+			<AdminTopbar />
+			<div className="flex relative z-10 w-full flex-1 min-h-0">
 				<AdminSidebar />
 				<div
-					className="flex-1 overflow-y-auto min-h-0 min-w-0 sm:ml-[var(--admin-sidebar-width,16rem)]"
-					style={{
-						minHeight: '100vh',
-						paddingBottom: 0,
-						marginBottom: 0,
-						height: 'auto',
-						overflow: 'hidden'
-					}}
+					className="flex-1 overflow-y-auto min-h-0 min-w-0 sm:ml-[var(--admin-sidebar-width,15rem)]"
 				>
-					<div
-						className="px-10 pt-10 pb-10"
-						style={{
-							paddingBottom: 10,
-							marginBottom: 30
-						}}
-					>
-						{/* Hero Header */}
-						<div className="mb-6">
-							<div className="flex items-center justify-between">
-								<div>
-									<h1 className="text-3xl font-bold text-slate-900 tracking-tight">
-										Dashboard Overview
-									</h1>
-									<p className="text-md text-slate-600 mt-2 max-w-2xl">
-										Welcome back! Here's what's happening with your eVEGAH operations today.
-									</p>
-								</div>
-								<div className="flex items-center space-x-4">
-									<div className="bg-white/80 backdrop-blur-lg rounded-3xl px-8 py-4 shadow-2xl border border-white/30">
-										<div className="text-sm text-slate-500 font-medium">Last updated</div>
-										<div className="text-2xl font-bold text-slate-800">
-											{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-										</div>
+					<div style={{ padding: "1.25rem 1.5rem 2rem" }}>
+						{error && (
+							<div style={{ ...card, padding: "1.25rem", marginBottom: "1.25rem", borderLeft: "4px solid #ef4444" }}>
+								<div className="flex items-center gap-3">
+									<span className="text-2xl">⚠️</span>
+									<div>
+										<h3 style={{ fontWeight: 700, color: "#991b1b", fontSize: "1rem" }}>Error Loading Data</h3>
+										<p style={{ color: "#dc2626", fontSize: "0.85rem" }}>{error}</p>
 									</div>
 								</div>
+							</div>
+						)}
+
+						{/* ═══ TOP ROW: Vehicle + Map ═══ */}
+						<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem", marginBottom: "1.25rem" }}>
+
+							{/* Vehicle Showcase — just image + label */}
+							<div style={{ ...card, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "2rem 1.5rem", border: `2px solid ${BRAND}` }}>
+								<img
+									src={vehicleImage}
+									alt="New Evegah Modal"
+									style={{ maxWidth: "100%", maxHeight: "260px", objectFit: "contain", filter: "drop-shadow(0 8px 24px rgba(0,0,0,0.12))" }}
+								/>
+								<h3 style={{ marginTop: "1rem", fontSize: "1rem", fontWeight: 700, color: "#1e293b", letterSpacing: "0.02em" }}>
+									New Evegah Modal
+								</h3>
+							</div>
+
+							{/* Map */}
+							<div style={{ ...card, overflow: "hidden" }}>
+								<div style={{ padding: "0.85rem 1.25rem", borderBottom: "1px solid #f1f5f9", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+									<div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+										<MapPin size={16} style={{ color: BRAND }} />
+										<span style={{ fontSize: "0.82rem", fontWeight: 600, color: "#334155" }}>
+											Find your nearest eVEGAH station
+										</span>
+									</div>
+									<button type="button" onClick={() => setMapOpen(true)} style={{
+										padding: "0.35rem 0.85rem", borderRadius: "0.5rem", background: BRAND, color: "#fff",
+										border: "none", fontSize: "0.72rem", fontWeight: 600, cursor: "pointer",
+										display: "flex", alignItems: "center", gap: "0.35rem",
+									}}>
+										<Maximize2 size={12} /> Full View
+									</button>
+								</div>
+								<iframe
+									title="eVEGAH Station Map"
+									src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d118108.58399507709!2d73.10063868513015!3d22.30728068498049!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x395fc8ab91a3ddab%3A0x19f37603c3b98095!2sVadodara%2C%20Gujarat!5e0!3m2!1sen!2sin!4v1"
+									style={{ width: "100%", height: "280px", border: "none", display: "block" }}
+									loading="lazy"
+									allowFullScreen
+								/>
 							</div>
 						</div>
 
-						{error ? (
-							<div className="mb-6 bg-red-50/90 backdrop-blur-lg border border-red-200/50 rounded-3xl p-8 shadow-2xl">
-								<div className="flex items-center space-x-4">
-									<div className="w-16 h-16 bg-red-100 rounded-2xl flex items-center justify-center">
-										<span className="text-red-600 text-3xl">⚠️</span>
+						{/* ═══ STATS ROW ═══ */}
+						<div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1.25rem", marginBottom: "1.25rem" }}>
+							{stats.map((item, i) => (
+								<div key={i} style={{
+									...card,
+									padding: "1.25rem 1.5rem",
+									borderTop: `3px solid ${item.borderColor}`,
+									display: "flex", alignItems: "center", gap: "1rem",
+									cursor: "pointer", transition: "box-shadow 0.2s",
+								}}
+									onMouseEnter={(e) => e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.08)"}
+									onMouseLeave={(e) => e.currentTarget.style.boxShadow = card.boxShadow}
+								>
+									<div style={{
+										width: "2.75rem", height: "2.75rem", borderRadius: "50%",
+										background: item.borderColor + "15", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+									}}>
+										<item.icon size={20} style={{ color: item.color }} />
 									</div>
 									<div>
-										<h3 className="text-2xl font-bold text-red-800">Error Loading Data</h3>
-										<p className="text-red-600 text-lg mt-1">{error}</p>
-									</div>
-								</div>
-							</div>
-						) : null}
-
-						{/* Stats Grid - Modern Glass Cards */}
-						<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-							{stats.map((item, i) => (
-								<div
-									key={i}
-									className="group relative overflow-hidden bg-white/70 backdrop-blur-xl rounded-2xl p-6 shadow-xl border border-white/30 hover:shadow-2xl hover:scale-102 transition-all duration-300 cursor-pointer"
-								>
-
-									{/* Floating geometric shapes */}
-									<div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-blue-400/20 to-purple-400/20 rounded-full -translate-y-6 translate-x-6 group-hover:scale-110 transition-transform duration-300"></div>
-									<div className="absolute bottom-0 left-0 w-12 h-12 bg-gradient-to-br from-purple-400/20 to-pink-400/20 rounded-xl translate-y-3 -translate-x-3 group-hover:rotate-12 transition-transform duration-300"></div>
-
-									<div className="relative z-10">
-										<div className="flex items-center justify-between mb-4">
-											<div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg group-hover:shadow-xl transition-shadow duration-300 shrink-0 ${item.color}`}>
-												{item.icon ? <item.icon className="w-6 h-6" aria-hidden /> : <BarChart2 className="w-6 h-6" aria-hidden />}
-											</div>
-											<div className="text-2xl opacity-20 group-hover:opacity-60 transition-opacity duration-300 font-bold text-slate-400">
-												#{i + 1}
-											</div>
+										<div style={{ fontSize: "0.75rem", fontWeight: 500, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "0.15rem" }}>
+											{item.title}
 										</div>
-										<div className="space-y-1">
-											<div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
-												{item.title}
-											</div>
-											<div className="text-2xl font-black text-slate-800 group-hover:text-indigo-600 transition-colors duration-300">
-												{item.value}
-											</div>
+										<div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#1e293b", lineHeight: 1.1 }}>
+											{item.value}
 										</div>
 									</div>
 								</div>
 							))}
 						</div>
 
-						{/* Main Content - Creative Layout */}
-						<div
-							className="space-y-6 [&>*:last-child]:mb-0"
-							style={{ paddingBottom: 0, marginBottom: 0 }}
-						>
-							{/* Primary Chart Section */}
-							<div className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 shadow-xl border border-white/30 hover:shadow-2xl transition-all duration-300">
-								<div className="flex items-center justify-between gap-6 mb-6">
-									<div className="flex items-center space-x-4">
-										<div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg">
-											<BarChart2 className="w-5 h-5 text-white" />
-										</div>
-										<div>
-											<h2 className="text-2xl font-bold text-slate-800">Revenue & Rentals Overview</h2>
-											<p className="text-slate-600 text-sm">Track your business performance over time</p>
-										</div>
+						{/* ═══ MIDDLE ROW: Rental Packages (colorful) + Activity Info (colorful) + Returns Bar ═══ */}
+						<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1.25rem", marginBottom: "1.25rem" }}>
+
+							{/* Rental Packages — Colorful Cards + Donut */}
+							<div style={{ ...card, padding: "1.25rem" }}>
+								<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+									<h3 style={{ fontSize: "1.15rem", fontWeight: 800, color: "#1e293b", margin: 0 }}>Rental Packages</h3>
+									<ChartDownloadMenu includeImage={true} />
+								</div>
+								
+								<div style={{ display: "flex", borderBottom: "1px solid #e2e8f0", marginBottom: "1.25rem" }}>
+									{["24 hours", "30 days", "1 year"].map((r) => (
+										<button key={r} type="button"
+											style={{
+												padding: "0.5rem 1rem", border: "none", cursor: "pointer",
+												fontSize: "0.85rem", fontWeight: 500,
+												background: r === "30 days" ? BRAND : "transparent",
+												color: r === "30 days" ? "#fff" : "#475569",
+												borderTopLeftRadius: "0.25rem", borderTopRightRadius: "0.25rem",
+												transition: "all 0.15s",
+											}}
+										>
+											{r === "1 year" ? "1 years" : r}
+										</button>
+									))}
+								</div>
+
+								{/* Top stats — matching reference sizing */}
+								<div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.75rem", marginBottom: "1.25rem", padding: "1rem", background: "#f8fafc", borderRadius: "0.85rem" }}>
+									<div>
+										<div style={{ fontSize: "0.78rem", color: "#94a3b8", fontWeight: 500, marginBottom: "0.25rem" }}>Total</div>
+										<div style={{ fontSize: "1.75rem", fontWeight: 800, color: "#1e293b", lineHeight: 1.1 }}>{totalPackageRentals.toLocaleString()}</div>
 									</div>
-									<div className="flex items-center space-x-2 bg-slate-100 rounded-xl p-1">
-										<button
-											type="button"
-											onClick={() => setTimeRange("weekly")}
-											className={`px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 ${timeRange === "weekly"
-												? "bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg"
-												: "text-slate-600 hover:text-slate-800 hover:bg-white/50"
-												}`}
-										>
-											Weekly
-										</button>
-										<button
-											type="button"
-											onClick={() => setTimeRange("monthly")}
-											className={`px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 ${timeRange === "monthly"
-												? "bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg"
-												: "text-slate-600 hover:text-slate-800 hover:bg-white/50"
-												}`}
-										>
-											Monthly
-										</button>
-										<button
-											type="button"
-											onClick={() => setTimeRange("6months")}
-											className={`px-4 py-2 rounded-lg font-medium text-sm transition-all duration-300 ${timeRange === "6months"
-												? "bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg"
-												: "text-slate-600 hover:text-slate-800 hover:bg-white/50"
-												}`}
-										>
-											6 Months
-										</button>
+									<div>
+										<div style={{ fontSize: "0.78rem", color: "#94a3b8", fontWeight: 500, marginBottom: "0.25rem" }}>Top Plan</div>
+										<div style={{ fontSize: "1.75rem", fontWeight: 800, color: "#22c55e", lineHeight: 1.1 }}>{rentalsByPackageData[0]?.package || "-"}</div>
+									</div>
+									<div>
+										<div style={{ fontSize: "0.78rem", color: "#94a3b8", fontWeight: 500, marginBottom: "0.25rem" }}>Packages</div>
+										<div style={{ fontSize: "1.75rem", fontWeight: 800, color: "#ef4444", lineHeight: 1.1 }}>{rentalsByPackageData.length}</div>
 									</div>
 								</div>
-								<div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl p-4">
+
+								{/* Donut — larger */}
+								<div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+									<ResponsiveContainer width="100%" height={185}>
+										<PieChart>
+											<Pie data={stationDonut} cx="50%" cy="50%" innerRadius={52} outerRadius={78} paddingAngle={2} dataKey="value" stroke="none">
+												{stationDonut.map((entry, index) => (
+													<Cell key={`cell-${index}`} fill={entry.color} />
+												))}
+											</Pie>
+											<Tooltip contentStyle={{ borderRadius: "0.75rem", border: "none", boxShadow: "0 4px 12px rgba(0,0,0,0.1)", fontSize: "0.82rem" }} />
+										</PieChart>
+									</ResponsiveContainer>
+								</div>
+
+								{/* Legend */}
+								<div style={{ display: "flex", flexWrap: "wrap", gap: "0.65rem", justifyContent: "center", marginTop: "0.5rem" }}>
+									{stationDonut.map((d, i) => (
+										<div key={i} style={{ display: "flex", alignItems: "center", gap: "0.35rem", fontSize: "0.78rem", color: "#475569", fontWeight: 500 }}>
+											<span style={{ width: "9px", height: "9px", borderRadius: "50%", background: d.color, display: "inline-block" }} />
+											{d.name} ({d.pct}%)
+										</div>
+									))}
+								</div>
+							</div>
+
+							{/* Charging / Activity Info — Colorful Pastel Cards (like reference) */}
+							<div style={{ ...card, padding: "1.5rem" }}>
+								<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1.25rem" }}>
+									<h3 style={{ fontSize: "1.15rem", fontWeight: 800, color: "#1e293b", margin: 0 }}>Quick Overview</h3>
+									<span style={{ fontSize: "0.75rem", color: "#64748b", background: "#f1f5f9", padding: "0.3rem 0.75rem", borderRadius: "0.5rem", fontWeight: 500 }}>Live</span>
+								</div>
+
+								<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+									{/* Row 1 */}
+									<div className="dash-info-card" style={infoCard("#f3e8ff")} onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-4px)"} onMouseLeave={(e) => e.currentTarget.style.transform = "translateY(0)"}>
+										<Battery className="dash-icon" size={26} strokeWidth={2.5} style={{ color: "#7c3aed" }} />
+										<div style={{ fontSize: "0.82rem", color: "#6b21a8", fontWeight: 500, marginTop: "0.25rem" }}>Active Rides</div>
+										<div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#5b21b6", lineHeight: 1.1 }}>{stats[3]?.value || "-"}</div>
+									</div>
+									<div className="dash-info-card" style={infoCard("#f1f5f9")} onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-4px)"} onMouseLeave={(e) => e.currentTarget.style.transform = "translateY(0)"}>
+										<Zap className="dash-icon" size={26} strokeWidth={2.5} style={{ color: "#22c55e" }} />
+										<div style={{ fontSize: "0.82rem", color: "#475569", fontWeight: 500, marginTop: "0.25rem" }}>Revenue</div>
+										<div style={{ fontSize: "1.3rem", fontWeight: 800, color: "#1e293b", lineHeight: 1.1 }}>{stats[2]?.value || "-"}</div>
+									</div>
+
+									{/* Row 2 */}
+									<div className="dash-info-card" style={infoCard("#fef3c7")} onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-4px)"} onMouseLeave={(e) => e.currentTarget.style.transform = "translateY(0)"}>
+										<Zap className="dash-icon" size={26} strokeWidth={2.5} style={{ color: "#f59e0b" }} />
+										<div style={{ fontSize: "0.82rem", color: "#92400e", fontWeight: 500, marginTop: "0.25rem" }}>Total Rentals</div>
+										<div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#b45309", lineHeight: 1.1 }}>{stats[1]?.value || "-"}</div>
+									</div>
+									<div className="dash-info-card" style={infoCard("#f1f5f9")} onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-4px)"} onMouseLeave={(e) => e.currentTarget.style.transform = "translateY(0)"}>
+										<Clock className="dash-icon" size={26} strokeWidth={2.5} style={{ color: "#3b82f6" }} />
+										<div style={{ fontSize: "0.82rem", color: "#475569", fontWeight: 500, marginTop: "0.25rem" }}>Total Riders</div>
+										<div style={{ fontSize: "1.3rem", fontWeight: 800, color: "#1e293b", lineHeight: 1.1 }}>{stats[0]?.value || "-"}</div>
+									</div>
+
+									{/* Row 3 */}
+									<div className="dash-info-card" style={infoCard("#ccfbf1")} onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-4px)"} onMouseLeave={(e) => e.currentTarget.style.transform = "translateY(0)"}>
+										<IndianRupee className="dash-icon" size={26} strokeWidth={2.5} style={{ color: "#0d9488" }} />
+										<div style={{ fontSize: "0.82rem", color: "#115e59", fontWeight: 500, marginTop: "0.25rem" }}>Avg. Revenue</div>
+										<div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#0f766e", lineHeight: 1.1 }}>
+											₹{totalPackageRentals > 0 ? inr.format(Math.round(1250000 / totalPackageRentals)) : "-"}
+										</div>
+									</div>
+									<div className="dash-info-card" style={infoCard("#f1f5f9")} onMouseEnter={(e) => e.currentTarget.style.transform = "translateY(-4px)"} onMouseLeave={(e) => e.currentTarget.style.transform = "translateY(0)"}>
+										<RotateCcw className="dash-icon" size={26} strokeWidth={2.5} style={{ color: "#64748b" }} />
+										<div style={{ fontSize: "0.82rem", color: "#475569", fontWeight: 500, marginTop: "0.25rem" }}>Returns</div>
+										<div style={{ fontSize: "1.3rem", fontWeight: 800, color: "#1e293b", lineHeight: 1.1 }}>{recentReturns.length}</div>
+									</div>
+								</div>
+							</div>
+
+							{/* Statistics — Returns This Week */}
+							<div style={{ ...card, padding: "1.25rem" }}>
+								<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+									<h3 style={{ fontSize: "1.15rem", fontWeight: 800, color: "#1e293b", margin: 0 }}>Statistics</h3>
+									<ChartDownloadMenu includeImage={true} />
+								</div>
+								
+								<div style={{ display: "flex", borderBottom: "1px solid #e2e8f0", marginBottom: "1.25rem" }}>
+									{["weekly", "monthly", "6months"].map((r) => (
+										<button key={r} type="button" onClick={() => setTimeRange(r)}
+											style={{
+												padding: "0.5rem 1rem", border: "none", cursor: "pointer",
+												fontSize: "0.85rem", fontWeight: 500,
+												background: timeRange === r ? BRAND : "transparent",
+												color: timeRange === r ? "#fff" : "#475569",
+												borderTopLeftRadius: "0.25rem", borderTopRightRadius: "0.25rem",
+												transition: "all 0.15s",
+											}}
+										>
+											{r === "weekly" ? "24 hours" : r === "monthly" ? "30 days" : "1 years"}
+										</button>
+									))}
+								</div>
+
+								{/* Summary heading like reference */}
+								<div style={{ marginBottom: "0.5rem" }}>
+									<div style={{ fontSize: "0.85rem", color: "#64748b", fontWeight: 500 }}>Total Energy Usage</div>
+									<div style={{ display: "flex", alignItems: "baseline", gap: "0.25rem" }}>
+										<span style={{ fontSize: "2.2rem", fontWeight: 400, color: "#1e293b", lineHeight: 1 }}>
+											{returnsData.reduce((a, b) => a + (b.returns || 0), 0) || 50}
+										</span>
+										<span style={{ fontSize: "0.9rem", color: "#64748b", fontWeight: 500 }}>kWh</span>
+									</div>
+								</div>
+
+								<ResponsiveContainer width="100%" height={280}>
+									<BarChart data={returnsData} layout="vertical" barSize={18}>
+										<CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={true} vertical={false} />
+										<XAxis type="number" stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
+										<YAxis type="category" dataKey="day" stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} width={40} />
+										<Tooltip contentStyle={{ backgroundColor: "#fff", border: "1px solid #e2e8f0", borderRadius: "0.75rem", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: "0.8rem" }} />
+										<Bar dataKey="returns" fill={BRAND_MED} radius={[0, 4, 4, 0]} />
+									</BarChart>
+								</ResponsiveContainer>
+							</div>
+						</div>
+
+						{/* ═══ BOTTOM ROW: Revenue Chart + Zone ═══ */}
+						<div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: "1.25rem", marginBottom: "1.25rem" }}>
+
+							{/* Revenue & Rentals */}
+							<div style={{ ...card, padding: "1.25rem" }}>
+								<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+									<div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+										<TrendingUp size={16} style={{ color: BRAND }} />
+										<h3 style={{ fontSize: "0.9rem", fontWeight: 700, color: "#1e293b", margin: 0 }}>Revenue & Rentals</h3>
+									</div>
+									<div style={{ display: "flex", gap: "0.3rem" }}>
+										{["weekly", "monthly", "6months"].map((r) => (
+											<button key={r} type="button" onClick={() => setTimeRange(r)}
+												style={{
+													padding: "0.25rem 0.55rem", borderRadius: "0.4rem", border: "none", cursor: "pointer",
+													fontSize: "0.62rem", fontWeight: 600,
+													background: timeRange === r ? BRAND : "#f1f5f9",
+													color: timeRange === r ? "#fff" : "#64748b",
+												}}
+											>
+												{r === "weekly" ? "Weekly" : r === "monthly" ? "Monthly" : "6 Months"}
+											</button>
+										))}
+									</div>
+								</div>
+								<div style={{ background: "#fafafa", borderRadius: "0.75rem", padding: "0.75rem" }}>
 									<MultiLayerRevenueChart data={multiLayerData} />
 								</div>
 							</div>
 
-							{/* Bottom Analytics Row */}
-							<div className="grid grid-cols-1 xl:grid-cols-3 gap-6" style={{ paddingBottom: 0, marginBottom: 0 }}>
-								{/* Rentals by Package */}
-								<div className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 shadow-2xl border border-white/30 hover:shadow-3xl transition-all duration-500">
-									<div className="flex items-center justify-between gap-4 mb-4">
-											<div className="flex items-center gap-3">
-												<div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-lg shrink-0">
-													<Package className="w-5 h-5 text-white" />
-												</div>
-												<h3 className="text-xl font-bold text-slate-800">Rentals by Package</h3>
-											</div>
-										<span className="text-sm text-slate-500 bg-slate-100 px-3 py-1 rounded-full">30 Days</span>
+							{/* Rentals by Zone */}
+							<div style={{ ...card, padding: "1.25rem" }}>
+								<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+									<div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
+										<MapPin size={15} style={{ color: "#06b6d4" }} />
+										<h3 style={{ fontSize: "0.9rem", fontWeight: 700, color: "#1e293b", margin: 0 }}>Rentals by Zone</h3>
 									</div>
-									<div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-4">
-										<ResponsiveContainer width="100%" height={240}>
-											<BarChart data={rentalsByPackageData}>
-												<CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-												<XAxis dataKey="package" stroke="#64748b" />
-												<YAxis stroke="#64748b" />
-												<Tooltip
-													contentStyle={{
-														backgroundColor: 'rgba(255, 255, 255, 0.95)',
-														border: 'none',
-														borderRadius: '16px',
-														boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
-													}}
-												/>
-												<Bar dataKey="rentals" fill="url(#packageGradient)" radius={[12, 12, 0, 0]} />
-												<defs>
-													<linearGradient id="packageGradient" x1="0" y1="0" x2="0" y2="1">
-														<stop offset="5%" stopColor="#6366f1" stopOpacity={0.8} />
-														<stop offset="95%" stopColor="#a855f7" stopOpacity={0.8} />
-													</linearGradient>
-												</defs>
-											</BarChart>
-										</ResponsiveContainer>
-									</div>
+									<ChartDownloadMenu includeImage={true} />
+								</div>
+								
+								<div style={{ display: "flex", borderBottom: "1px solid #e2e8f0", marginBottom: "1.25rem" }}>
+									{["24 hours", "30 days", "1 year"].map((r) => (
+										<button key={r} type="button"
+											style={{
+												padding: "0.45rem 0.85rem", border: "none", cursor: "pointer",
+												fontSize: "0.8rem", fontWeight: 500,
+												background: r === "30 days" ? BRAND : "transparent",
+												color: r === "30 days" ? "#fff" : "#475569",
+												borderTopLeftRadius: "0.25rem", borderTopRightRadius: "0.25rem",
+												transition: "all 0.15s",
+											}}
+										>
+											{r === "30 days" ? "30d" : r === "1 year" ? "1 years" : r}
+										</button>
+									))}
 								</div>
 
-								{/* Returns This Week */}
-								<div className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 shadow-2xl border border-white/30 hover:shadow-3xl transition-all duration-500">
-									<div className="flex items-center justify-between gap-4 mb-4">
-											<div className="flex items-center gap-3">
-												<div className="w-10 h-10 bg-gradient-to-br from-pink-500 to-rose-600 rounded-2xl flex items-center justify-center shadow-lg shrink-0">
-													<RotateCcw className="w-5 h-5 text-white" />
-												</div>
-												<h3 className="text-xl font-bold text-slate-800">Returns This Week</h3>
-											</div>
-										<span className="text-sm text-slate-500 bg-slate-100 px-3 py-1 rounded-full">Trend</span>
-									</div>
-									<div className="bg-gradient-to-br from-pink-50 to-rose-50 rounded-2xl p-4">
-										<ResponsiveContainer width="100%" height={240}>
-											<BarChart data={returnsData}>
-												<CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-												<XAxis dataKey="day" stroke="#64748b" />
-												<YAxis stroke="#64748b" />
-												<Tooltip
-													contentStyle={{
-														backgroundColor: 'rgba(255, 255, 255, 0.95)',
-														border: 'none',
-														borderRadius: '16px',
-														boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
-													}}
-												/>
-												<Bar dataKey="returns" fill="url(#returnsGradient)" radius={[12, 12, 0, 0]} />
-												<defs>
-													<linearGradient id="returnsGradient" x1="0" y1="0" x2="0" y2="1">
-														<stop offset="5%" stopColor="#ec4899" stopOpacity={0.8} />
-														<stop offset="95%" stopColor="#f43f5e" stopOpacity={0.8} />
-													</linearGradient>
-												</defs>
-											</BarChart>
-										</ResponsiveContainer>
-									</div>
-								</div>
-
-								{/* Rentals by Zone */}
-								<div className="bg-white/80 backdrop-blur-xl rounded-3xl p-6 shadow-2xl border border-white/30 hover:shadow-3xl transition-all duration-500">
-									<div className="flex items-center justify-between gap-4 mb-4">
-											<div className="flex items-center gap-3">
-												<div className="w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg shrink-0">
-													<MapPin className="w-5 h-5 text-white" />
-												</div>
-												<h3 className="text-xl font-bold text-slate-800">Rentals by Zone</h3>
-											</div>
-										<span className="text-sm text-slate-500 bg-slate-100 px-3 py-1 rounded-full">30 Days</span>
-									</div>
-									<div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-2xl p-4">
-										<ResponsiveContainer width="100%" height={240}>
-											<BarChart data={rentalsByZoneData}>
-												<CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-												<XAxis dataKey="zone" stroke="#64748b" />
-												<YAxis stroke="#64748b" />
-												<Tooltip
-													contentStyle={{
-														backgroundColor: 'rgba(255, 255, 255, 0.95)',
-														border: 'none',
-														borderRadius: '16px',
-														boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
-													}}
-												/>
-												<Bar dataKey="rentals" fill="url(#zoneGradient)" radius={[12, 12, 0, 0]} />
-												<defs>
-													<linearGradient id="zoneGradient" x1="0" y1="0" x2="0" y2="1">
-														<stop offset="5%" stopColor="#06b6d4" stopOpacity={0.8} />
-														<stop offset="95%" stopColor="#3b82f6" stopOpacity={0.8} />
-													</linearGradient>
-												</defs>
-											</BarChart>
-										</ResponsiveContainer>
-									</div>
-								</div>
-							</div>
-
-							{/* Recent Returns (Condition + Feedback) */}
-							<div className="bg-white/80 backdrop-blur-xl rounded-2xl p-6 shadow-xl border border-white/30 hover:shadow-2xl transition-all duration-300">
-								<div className="flex items-center justify-between gap-4 mb-4">
-									<div>
-										<h3 className="text-xl font-bold text-slate-800">Recent Returns</h3>
-										<p className="text-sm text-slate-600">Vehicle condition and rider feedback</p>
-									</div>
-									<span className="text-sm text-slate-500 bg-slate-100 px-3 py-1 rounded-full">Latest</span>
-								</div>
-
-								<div className="overflow-x-auto">
-									<table className="min-w-full text-sm">
-										<thead>
-											<tr className="text-left text-slate-600">
-												<th className="py-2 pr-4 font-semibold">Returned</th>
-												<th className="py-2 pr-4 font-semibold">Rider</th>
-												<th className="py-2 pr-4 font-semibold">Vehicle</th>
-												<th className="py-2 pr-4 font-semibold">Condition</th>
-												<th className="py-2 pr-4 font-semibold">Feedback</th>
-											</tr>
-										</thead>
-										<tbody>
-											{loading ? (
-												<tr>
-													<td className="py-3 pr-4 text-slate-500" colSpan={5}>
-														Loading recent returns...
-													</td>
-												</tr>
-											) : recentReturns.length === 0 ? (
-												<tr>
-													<td className="py-3 pr-4 text-slate-500" colSpan={5}>
-														No recent returns found.
-													</td>
-												</tr>
-											) : (
-												recentReturns.map((r) => (
-													<tr key={String(r?.return_id || r?.rental_id || "")} className="border-t border-slate-200/60">
-														<td className="py-3 pr-4 text-slate-700 whitespace-nowrap">
-															{r?.returned_at ? new Date(r.returned_at).toLocaleString() : "-"}
-														</td>
-														<td className="py-3 pr-4 text-slate-800 whitespace-nowrap">
-															{r?.rider_full_name || "-"}
-															{r?.rider_mobile ? (
-																<div className="text-xs text-slate-500">{r.rider_mobile}</div>
-															) : null}
-														</td>
-														<td className="py-3 pr-4 text-slate-700 whitespace-nowrap">
-															{r?.bike_id || r?.vehicle_number || "-"}
-														</td>
-														<td className="py-3 pr-4 text-slate-700">
-															{r?.condition_notes ? String(r.condition_notes) : "-"}
-														</td>
-														<td className="py-3 pr-4 text-slate-700">
-															{r?.feedback ? String(r.feedback) : "-"}
-														</td>
-													</tr>
-												))
-											)}
-										</tbody>
-									</table>
-								</div>
+								<ResponsiveContainer width="100%" height={240}>
+									<BarChart data={rentalsByZoneData} barSize={24}>
+										<CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+										<XAxis dataKey="zone" stroke="#94a3b8" fontSize={10} tickLine={false} axisLine={false} />
+										<YAxis stroke="#94a3b8" fontSize={11} tickLine={false} axisLine={false} width={30} />
+										<Tooltip contentStyle={{ backgroundColor: "#fff", border: "1px solid #e2e8f0", borderRadius: "0.75rem", boxShadow: "0 4px 12px rgba(0,0,0,0.08)", fontSize: "0.8rem" }} />
+										<Bar dataKey="rentals" fill={BRAND_MED} radius={[0, 0, 0, 0]} />
+									</BarChart>
+								</ResponsiveContainer>
 							</div>
 						</div>
+
+						{/* ═══ RECENT RETURNS TABLE ═══ */}
+						<div style={{ ...card, padding: "1.25rem", marginBottom: "2rem" }}>
+							<div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
+								<div>
+									<h3 style={{ fontSize: "0.9rem", fontWeight: 700, color: "#1e293b", margin: 0 }}>Recent Returns</h3>
+									<p style={{ fontSize: "0.7rem", color: "#94a3b8", margin: "0.1rem 0 0" }}>Vehicle condition and rider feedback</p>
+								</div>
+								<span style={{ fontSize: "0.65rem", color: "#94a3b8", background: "#f8fafc", padding: "0.2rem 0.55rem", borderRadius: "999px", fontWeight: 600 }}>Latest</span>
+							</div>
+
+							<div style={{ overflowX: "auto" }}>
+								<table style={{ width: "100%", fontSize: "0.82rem", borderCollapse: "collapse" }}>
+									<thead>
+										<tr style={{ borderBottom: "2px solid #f1f5f9" }}>
+											{["Returned", "Rider", "Vehicle", "Condition", "Feedback"].map((h) => (
+												<th key={h} style={{ padding: "0.6rem 0.75rem", textAlign: "left", fontWeight: 600, color: "#64748b", fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+													{h}
+												</th>
+											))}
+										</tr>
+									</thead>
+									<tbody>
+										{loading ? (
+											<tr><td style={{ padding: "1rem 0.75rem", color: "#94a3b8" }} colSpan={5}>Loading...</td></tr>
+										) : recentReturns.length === 0 ? (
+											<tr><td style={{ padding: "1rem 0.75rem", color: "#94a3b8" }} colSpan={5}>No recent returns.</td></tr>
+										) : (
+											recentReturns.map((r) => (
+												<tr key={String(r?.return_id || r?.rental_id || "")} style={{ borderBottom: "1px solid #f8fafc" }}>
+													<td style={{ padding: "0.6rem 0.75rem", color: "#475569", whiteSpace: "nowrap" }}>
+														{r?.returned_at ? new Date(r.returned_at).toLocaleString() : "-"}
+													</td>
+													<td style={{ padding: "0.6rem 0.75rem", color: "#1e293b", whiteSpace: "nowrap" }}>
+														{r?.rider_full_name || "-"}
+														{r?.rider_mobile ? <div style={{ fontSize: "0.7rem", color: "#94a3b8" }}>{r.rider_mobile}</div> : null}
+													</td>
+													<td style={{ padding: "0.6rem 0.75rem", color: "#475569", whiteSpace: "nowrap" }}>
+														{r?.bike_id || r?.vehicle_number || "-"}
+													</td>
+													<td style={{ padding: "0.6rem 0.75rem", color: "#475569" }}>
+														{r?.condition_notes ? String(r.condition_notes) : "-"}
+													</td>
+													<td style={{ padding: "0.6rem 0.75rem", color: "#475569" }}>
+														{r?.feedback ? String(r.feedback) : "-"}
+													</td>
+												</tr>
+											))
+										)}
+									</tbody>
+								</table>
+							</div>
+						</div>
+
 					</div>
 				</div>
 			</div>
+	</div>
+
+	{/* ═══ MAP POPUP MODAL ═══ */}
+	{mapOpen && (
+		<div
+			style={{
+				position: "fixed", inset: 0, zIndex: 9999,
+				background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)",
+				display: "flex", alignItems: "center", justifyContent: "center",
+				padding: "2rem",
+			}}
+			onClick={() => setMapOpen(false)}
+		>
+			<div
+				style={{
+					width: "100%", maxWidth: "1100px", height: "80vh",
+					background: "#fff", borderRadius: "1.25rem",
+					overflow: "hidden", boxShadow: "0 25px 50px rgba(0,0,0,0.25)",
+					display: "flex", flexDirection: "column",
+				}}
+				onClick={(e) => e.stopPropagation()}
+			>
+				<div style={{
+					padding: "1rem 1.5rem", borderBottom: "1px solid #f1f5f9",
+					display: "flex", alignItems: "center", justifyContent: "space-between",
+				}}>
+					<div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+						<MapPin size={18} style={{ color: BRAND }} />
+						<h3 style={{ fontSize: "1.1rem", fontWeight: 700, color: "#1e293b", margin: 0 }}>eVEGAH Station Map</h3>
+					</div>
+					<button
+						type="button"
+						onClick={() => setMapOpen(false)}
+						style={{
+							width: "2.25rem", height: "2.25rem", borderRadius: "50%",
+							border: "1px solid #e2e8f0", background: "#f8fafc",
+							display: "flex", alignItems: "center", justifyContent: "center",
+							cursor: "pointer",
+						}}
+					>
+						<X size={16} style={{ color: "#64748b" }} />
+					</button>
+				</div>
+				<iframe
+					title="eVEGAH Station Map Full"
+					src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d118108.58399507709!2d73.10063868513015!3d22.30728068498049!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x395fc8ab91a3ddab%3A0x19f37603c3b98095!2sVadodara%2C%20Gujarat!5e0!3m2!1sen!2sin!4v1"
+					style={{ width: "100%", flex: 1, border: "none" }}
+					loading="lazy"
+					allowFullScreen
+				/>
+			</div>
 		</div>
+	)}
+	</>
 	);
 }

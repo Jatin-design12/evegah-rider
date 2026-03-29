@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AdminSidebar from "../../components/admin/AdminSidebar";
+import AdminTopbar from "../../components/admin/AdminTopbar";
 
 import { Edit, Eye, Trash2, Battery, TrendingUp, Car, Clock, Zap, User, CheckSquare, Square, RefreshCw, Download, FileText, Search, Columns } from "lucide-react";
 
@@ -293,6 +294,25 @@ export default function AdminBatterySwapsPage() {
   const load = async () => {
     setLoading(true);
     setError("");
+
+    if (import.meta.env.VITE_MODE === 'dev') {
+      setBatterySwaps([
+        { id: "1", rider_full_name: "John Doe", rider_mobile: "9876543210", vehicle_number: "E-BIKE-1", battery_out: "BAT-1", battery_in: "BAT-101", swapped_at: new Date().toISOString() },
+        { id: "2", rider_full_name: "Jane Smith", rider_mobile: "8765432109", vehicle_number: "E-BIKE-2", battery_out: "BAT-2", battery_in: "BAT-102", swapped_at: new Date(Date.now() - 86400000).toISOString() }
+      ]);
+      setBatterySwapsDailyData([
+        { day: "Mon", swaps: 12 }, { day: "Tue", swaps: 19 }, { day: "Wed", swaps: 15 }
+      ]);
+      setBatteryTopBatteriesData([
+        { battery_id: "BAT-1", installs: 5 }, { battery_id: "BAT-2", installs: 3 }
+      ]);
+      setBatteryTopVehiclesData([
+        { vehicle_number: "E-BIKE-1", swaps: 8 }, { vehicle_number: "E-BIKE-2", swaps: 6 }
+      ]);
+      setLoading(false);
+      return;
+    }
+
     try {
       const [swapRows, swapDaily, topBatteries, topVehicles] = await Promise.all([
         adminListBatterySwaps().catch(() => []),
@@ -666,7 +686,9 @@ export default function AdminBatterySwapsPage() {
 
       <div className="flex relative z-10 w-full">
         <AdminSidebar />
-        <main className="flex-1 w-full min-w-0 overflow-y-auto relative z-10 p-8 pb-0 overflow-x-hidden sm:ml-[var(--admin-sidebar-width,16rem)]">
+        <main className="flex-1 w-full min-w-0 overflow-y-auto relative z-10 pb-0 overflow-x-hidden sm:ml-[var(--admin-sidebar-width,16rem)]">
+          <AdminTopbar />
+          <div className="p-8">
           <div className="p-6">
             {/* Header */}
             <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
@@ -988,6 +1010,7 @@ export default function AdminBatterySwapsPage() {
                 </button>
               </div>
             </div>
+          </div>
           </div>
         </main>
 

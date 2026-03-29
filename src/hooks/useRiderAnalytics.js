@@ -9,6 +9,19 @@ export default function useRiderAnalytics() {
   const [zoneStats, setZoneStats] = useState([]);
 
   const loadAll = useCallback(async () => {
+    if (import.meta.env.VITE_MODE === 'dev') {
+      setTotalRiders(1250);
+      setActiveRiders(420);
+      setSuspendedRiders(15);
+      setTotalRides(8450);
+      setZoneStats([
+        { zone: "Gotri", value: 350 },
+        { zone: "Manjalpur", value: 280 },
+        { zone: "Karelibaug", value: 220 }
+      ]);
+      return;
+    }
+
     try {
       const payload = await apiFetch("/api/analytics/summary");
       setTotalRiders(payload?.totalRiders || 0);

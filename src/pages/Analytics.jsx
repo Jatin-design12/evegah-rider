@@ -1,4 +1,5 @@
 import AdminSidebar from "../components/admin/AdminSidebar";
+import AdminTopbar from "../components/admin/AdminTopbar";
 import useRiderAnalytics from "../hooks/useRiderAnalytics";
 import useLiveAnalytics from "../hooks/useLiveAnalytics";
 
@@ -235,7 +236,9 @@ export default function Analytics() {
     <div className="h-screen w-full flex bg-white relative overflow-hidden">
       <div className="flex relative z-10 w-full">
         <AdminSidebar />
-        <main className="flex-1 w-full min-w-0 overflow-y-auto relative z-10 p-8 pb-0 overflow-x-hidden sm:ml-[var(--admin-sidebar-width,16rem)]">
+        <main className="flex-1 w-full min-w-0 overflow-y-auto relative z-10 pb-0 overflow-x-hidden sm:ml-[var(--admin-sidebar-width,16rem)]">
+          <AdminTopbar />
+          <div className="p-8">
           <div className="space-y-6">
             <div id="analyticsHeaderSection" className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
@@ -406,6 +409,7 @@ export default function Analytics() {
               </div>
             </div>
 
+          </div>
           </div>
         </main>
       </div>
