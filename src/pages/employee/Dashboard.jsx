@@ -200,6 +200,12 @@ function ZoneRadialCard({ counts, loading }) {
       color: "text-evegah-accent",
       dot: "bg-evegah-accent",
     },
+    {
+      key: "Bengaluru",
+      label: "Bengaluru",
+      color: "text-brand-light",
+      dot: "bg-brand-light",
+    },
   ];
 
   const safeCounts = counts || {};

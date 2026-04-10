@@ -11,6 +11,7 @@ const ZONES = [
   "Ajwa Road",
   "Chhani",
   "Anand",
+  "Bengaluru",
 ];
 
 export default function useVehicleZoneCounts() {

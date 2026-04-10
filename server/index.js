@@ -604,6 +604,7 @@ function normalizeZone(value) {
   if (cleaned.includes("ajwa")) return "Ajwa Road";
   if (cleaned.includes("chhani")) return "Chhani";
   if (cleaned.includes("anand")) return "Anand";
+  if (cleaned.includes("bengaluru") || cleaned.includes("bangalore")) return "Bengaluru";
   return "";
 }
 
@@ -5688,6 +5689,7 @@ app.get("/api/analytics/active-zone-counts", async (_req, res) => {
     "Ajwa Road",
     "Chhani",
     "Anand",
+    "Bengaluru",
   ];
   const next = Object.fromEntries(ZONES.map((z) => [z, 0]));
 

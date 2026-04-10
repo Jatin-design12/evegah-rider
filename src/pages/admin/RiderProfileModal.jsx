@@ -43,6 +43,7 @@ export default function RiderProfileModal({ rider, close }) {
     if (cleaned.includes("ajwa")) return "Ajwa Road";
     if (cleaned.includes("chhani")) return "Chhani";
     if (cleaned.includes("anand")) return "Anand";
+    if (cleaned.includes("bengaluru") || cleaned.includes("bangalore")) return "Bengaluru";
     return "";
   };
 
