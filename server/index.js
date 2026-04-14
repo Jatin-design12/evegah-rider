@@ -615,17 +615,99 @@ function normalizeIdForCompare(value) {
 }
 
 const DEFAULT_SHARED_BATTERY_ID = "DEFAULT";
+const AVAILABILITY_RESET_SINGLETON = true;
+
+let availabilityResetTableReady = false;
+
+function normalizeAdminIdentity(value) {
+  return String(value || "").trim();
+}
+
+async function ensureAvailabilityResetTable({ client }) {
+  if (availabilityResetTableReady) return;
+
+  await client.query(
+    `create table if not exists public.availability_resets (
+       singleton boolean primary key default true,
+       reset_at timestamptz not null default now(),
+       reset_by_uid text,
+       reset_by_email text,
+       reason text,
+       updated_at timestamptz not null default now()
+     )`
+  );
+
+  await client.query(
+    `insert into public.availability_resets (singleton, reset_at, reason)
+     values ($1, to_timestamp(0), 'initial')
+     on conflict (singleton) do nothing`,
+    [AVAILABILITY_RESET_SINGLETON]
+  );
+
+  availabilityResetTableReady = true;
+}
+
+async function getAvailabilityResetAt({ client }) {
+  await ensureAvailabilityResetTable({ client });
+
+  const q = await client.query(
+    `select reset_at
+     from public.availability_resets
+     where singleton = $1
+     limit 1`,
+    [AVAILABILITY_RESET_SINGLETON]
+  );
+
+  const raw = q.rows?.[0]?.reset_at;
+  if (!raw) return null;
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
+async function resetAvailabilityCheckpoint({ client, resetByUid = "", resetByEmail = "", reason = "" }) {
+  await ensureAvailabilityResetTable({ client });
+
+  const q = await client.query(
+    `insert into public.availability_resets (singleton, reset_at, reset_by_uid, reset_by_email, reason, updated_at)
+     values ($1, now(), nullif($2::text, ''), nullif($3::text, ''), nullif($4::text, ''), now())
+     on conflict (singleton) do update
+       set reset_at = excluded.reset_at,
+           reset_by_uid = excluded.reset_by_uid,
+           reset_by_email = excluded.reset_by_email,
+           reason = excluded.reason,
+           updated_at = now()
+     returning reset_at`,
+    [
+      AVAILABILITY_RESET_SINGLETON,
+      normalizeAdminIdentity(resetByUid),
+      normalizeAdminIdentity(resetByEmail).toLowerCase(),
+      normalizeAdminIdentity(reason),
+    ]
+  );
+
+  const raw = q.rows?.[0]?.reset_at;
+  const parsed = raw ? new Date(raw) : null;
+  return parsed && !Number.isNaN(parsed.getTime()) ? parsed.toISOString() : new Date().toISOString();
+}
 
 function isSharedDefaultBatteryId(value) {
   return normalizeIdForCompare(value) === DEFAULT_SHARED_BATTERY_ID;
 }
 
 async function getActiveAvailability({ client }) {
+  const resetAtIso = await getAvailabilityResetAt({ client }).catch((error) => {
+    console.warn("Failed to read availability reset checkpoint:", String(error?.message || error));
+    return null;
+  });
+
   const q = await client.query(
     `with active_rentals as (
        select r.id as rental_id, r.start_time, r.bike_id, r.battery_id, r.vehicle_number
        from public.rentals r
        where not exists (select 1 from public.returns ret where ret.rental_id = r.id)
+         and ($1::timestamptz is null or r.start_time >= $1::timestamptz)
      ),
      active_with_current as (
        select ar.rental_id,
@@ -649,7 +731,8 @@ async function getActiveAvailability({ client }) {
        coalesce(array_agg(distinct bike_id) filter (where coalesce(bike_id,'') <> ''), '{}') as vehicle_ids,
        coalesce(array_agg(distinct vehicle_number) filter (where coalesce(vehicle_number,'') <> ''), '{}') as vehicle_numbers,
        coalesce(array_agg(distinct current_battery_id) filter (where coalesce(current_battery_id,'') <> ''), '{}') as battery_ids
-     from active_with_current`
+      from active_with_current`,
+     [resetAtIso]
   );
 
   const row = q.rows?.[0] || {};
@@ -670,6 +753,7 @@ async function getActiveAvailability({ client }) {
     unavailableVehicleIdSet: vehicleIdSet,
     unavailableVehicleNumberSet: vehicleNumberSet,
     unavailableBatteryIdSet: batteryIdSet,
+    availabilityResetAt: resetAtIso,
   };
 }
 
@@ -2123,6 +2207,24 @@ app.get("/api/availability", async (_req, res) => {
       unavailableVehicleIds: availability.unavailableVehicleIds,
       unavailableBatteryIds: availability.unavailableBatteryIds,
     });
+  } catch (error) {
+    res.status(500).json({ error: String(error?.message || error) });
+  } finally {
+    client.release();
+  }
+});
+
+app.post("/api/admin/availability/reset", requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const resetAt = await resetAvailabilityCheckpoint({
+      client,
+      resetByUid: req.user?.uid || req.user?.user_id || req.user?.sub || "",
+      resetByEmail: req.user?.email || "",
+      reason: req.body?.reason || "manual-admin-reset",
+    });
+
+    res.json({ ok: true, resetAt });
   } catch (error) {
     res.status(500).json({ error: String(error?.message || error) });
   } finally {
