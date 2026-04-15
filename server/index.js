@@ -3076,7 +3076,7 @@ app.get("/api/riders/lookup", async (req, res) => {
 
 app.get("/api/riders", async (req, res) => {
   const page = Math.max(1, Number(req.query.page || 1));
-  const limit = Math.min(100, Math.max(1, Number(req.query.limit || 10)));
+  const limit = Math.min(2000, Math.max(1, Number(req.query.limit || 10)));
   const offset = (page - 1) * limit;
 
   const search = String(req.query.search || "").trim();
@@ -3736,11 +3736,10 @@ app.post("/api/payments/icici/qr", async (req, res) => {
 
     const certInfo = getIciciPublicCertificateInfo();
     if (certInfo?.isExpired) {
-      return res.status(500).json({
-        error:
-          "ICICI public certificate has expired. Upload the latest ICICI public key/certificate and update ICICI_PUBLIC_KEY_PATH before generating QR.",
-        certificate: certInfo,
-      });
+      console.warn(
+        "ICICI public certificate is expired; continuing QR generation attempt because the gateway may still accept the encrypted payload.",
+        certInfo
+      );
     }
 
     if (!fetchApi) {
@@ -3771,7 +3770,6 @@ app.post("/api/payments/icici/qr", async (req, res) => {
       }
     }
 
-    const mode = String(process.env.ICICI_ENCRYPTION_MODE || "asymmetric").toLowerCase();
     const headers = {
       // As per PDF: content-type is text/plain, API key header name is apikey
       "Content-Type": "text/plain;charset=UTF-8",
@@ -3779,17 +3777,7 @@ app.post("/api/payments/icici/qr", async (req, res) => {
       apikey: iciciApiKey,
     };
 
-    let outboundBody;
-    if (mode === "hybrid") {
-      const serviceName = String(process.env.ICICI_SERVICE_QR || "QR3").trim();
-      outboundBody = JSON.stringify(
-        buildIciciEncryptedRequest({ requestId: txnId, service: serviceName, payload })
-      );
-      headers["Content-Type"] = "application/json";
-      headers.Accept = "application/json";
-    } else {
-      outboundBody = encryptIciciAsymmetricPayload(payload);
-    }
+    const outboundBody = encryptIciciAsymmetricPayload(payload);
 
     const response = await fetchApi(`${iciciBaseUrl}${iciciQrEndpoint}`, {
       method: "POST",
@@ -3799,25 +3787,17 @@ app.post("/api/payments/icici/qr", async (req, res) => {
 
     const rawText = await response.text().catch(() => "");
     let decoded = null;
-    if (mode === "hybrid") {
-      try {
-        decoded = rawText ? JSON.parse(rawText) : null;
-      } catch {
-        decoded = rawText;
+    try {
+      decoded = decodeIciciAsymmetricResponseOrThrow(rawText);
+    } catch (error) {
+      if (error?.code === "ICICI_PRIVATE_KEY_REQUIRED") {
+        return res.status(500).json({
+          error: String(error.message || error),
+          upstreamStatus: response.status,
+          upstreamBody: rawText,
+        });
       }
-    } else {
-      try {
-        decoded = decodeIciciAsymmetricResponseOrThrow(rawText);
-      } catch (error) {
-        if (error?.code === "ICICI_PRIVATE_KEY_REQUIRED") {
-          return res.status(500).json({
-            error: String(error.message || error),
-            upstreamStatus: response.status,
-            upstreamBody: rawText,
-          });
-        }
-        throw error;
-      }
+      throw error;
     }
 
     if (!response.ok) {

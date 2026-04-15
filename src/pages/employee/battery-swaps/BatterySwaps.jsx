@@ -337,7 +337,7 @@ export default function BatterySwaps() {
   useEffect(() => {
     let mounted = true;
     setRiderLoading(true);
-    apiFetch("/api/riders?limit=200")
+    apiFetch("/api/riders?status=active&rideStatus=riding&limit=1000")
       .then((result) => {
         if (!mounted) return;
         setRiderOptions(Array.isArray(result?.data) ? result.data : []);
