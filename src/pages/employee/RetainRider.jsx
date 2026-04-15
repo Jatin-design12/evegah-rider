@@ -1161,6 +1161,7 @@ function RetainRiderInner() {
                   <option>Aatapi</option>
                   <option>Ajwa Road</option>
                   <option>Anand</option>
+                  <option>Bengaluru</option>
                   <option>Chhani</option>
                   <option>Daman</option>
                   <option>Gotri Zone</option>

@@ -192,6 +192,7 @@ export default function RentalsTable() {
     if (cleaned.includes("ajwa")) return "Ajwa Road";
     if (cleaned.includes("chhani")) return "Chhani";
     if (cleaned.includes("anand")) return "Anand";
+    if (cleaned.includes("bengaluru") || cleaned.includes("bangalore")) return "Bengaluru";
     return "";
   };
 
@@ -223,6 +224,7 @@ export default function RentalsTable() {
     if (z.includes("ajwa")) return "bg-emerald-100 text-emerald-700";
     if (z.includes("chhani")) return "bg-amber-100 text-amber-700";
     if (z.includes("anand")) return "bg-sky-100 text-sky-700";
+    if (z.includes("bengaluru") || z.includes("bangalore")) return "bg-rose-100 text-rose-700";
     return "bg-gray-100 text-gray-700";
   };
 

@@ -16,6 +16,7 @@ function resolveExistingPath(p) {
     path.resolve(process.cwd(), raw),
     path.resolve(__dirname, raw),
     path.resolve(__dirname, "..", raw),
+    path.resolve(__dirname, "..", "..", raw),
   ];
 
   for (const c of candidates) {
@@ -46,14 +47,55 @@ function readKeyMaterialFromEnvOrPath({ pemEnv, pathEnv }) {
 
 let cachedPublicKey = null;
 let cachedPrivateKey = null;
+let cachedPublicCertificateInfo = null;
+
+function readIciciPublicKeyMaterial() {
+  return readKeyMaterialFromEnvOrPath({
+    pemEnv: "ICICI_PUBLIC_KEY_PEM",
+    pathEnv: "ICICI_PUBLIC_KEY_PATH",
+  });
+}
+
+function readIciciPublicCertificateInfo() {
+  if (cachedPublicCertificateInfo !== null) return cachedPublicCertificateInfo;
+
+  const material = readIciciPublicKeyMaterial();
+  if (!material) {
+    cachedPublicCertificateInfo = null;
+    return null;
+  }
+
+  // Only certificate material can be parsed as X509 metadata.
+  const asText = typeof material === "string" ? material : material.toString("utf8");
+  if (!asText.includes("BEGIN CERTIFICATE")) {
+    cachedPublicCertificateInfo = null;
+    return null;
+  }
+
+  try {
+    const cert = new crypto.X509Certificate(asText);
+    const validToMs = Number(new Date(cert.validTo).getTime());
+    const validFromMs = Number(new Date(cert.validFrom).getTime());
+    const nowMs = Date.now();
+    cachedPublicCertificateInfo = {
+      subject: cert.subject,
+      issuer: cert.issuer,
+      validFrom: cert.validFrom,
+      validTo: cert.validTo,
+      isExpired: Number.isFinite(validToMs) ? nowMs > validToMs : false,
+      isNotYetValid: Number.isFinite(validFromMs) ? nowMs < validFromMs : false,
+    };
+    return cachedPublicCertificateInfo;
+  } catch {
+    cachedPublicCertificateInfo = null;
+    return null;
+  }
+}
 
 function getIciciPublicKey() {
   if (cachedPublicKey) return cachedPublicKey;
 
-  const material = readKeyMaterialFromEnvOrPath({
-    pemEnv: "ICICI_PUBLIC_KEY_PEM",
-    pathEnv: "ICICI_PUBLIC_KEY_PATH",
-  });
+  const material = readIciciPublicKeyMaterial();
 
   if (!material) return null;
 
@@ -316,9 +358,35 @@ export function decryptIciciResponse({ encryptedKey, encryptedData, iv }) {
 }
 
 export function getIciciCryptoStatus() {
+  let hasPublicKey = false;
+  let hasPrivateKey = false;
+  let publicKeyError = null;
+  let privateKeyError = null;
+
+  try {
+    hasPublicKey = Boolean(getIciciPublicKey());
+  } catch (error) {
+    hasPublicKey = false;
+    publicKeyError = String(error?.message || error || "");
+  }
+
+  try {
+    hasPrivateKey = Boolean(getClientPrivateKey());
+  } catch (error) {
+    hasPrivateKey = false;
+    privateKeyError = String(error?.message || error || "");
+  }
+
   return {
-    hasPublicKey: Boolean(getIciciPublicKey()),
-    hasPrivateKey: Boolean(getClientPrivateKey()),
+    hasPublicKey,
+    hasPrivateKey,
+    publicKeyError,
+    privateKeyError,
+    publicCertificate: readIciciPublicCertificateInfo(),
     sessionKeyLength: Number(process.env.ICICI_SESSION_KEY_LENGTH || 16),
   };
+}
+
+export function getIciciPublicCertificateInfo() {
+  return readIciciPublicCertificateInfo();
 }
