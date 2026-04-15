@@ -18,6 +18,7 @@ import {
   getBatteryUsage,
   listBatterySwaps,
 } from "../../../utils/batterySwaps";
+import useAvailability from "../../../hooks/useAvailability";
 import { BATTERY_ID_OPTIONS } from "../../../utils/batteryIds";
 import { filterVehicleIdGroups, flattenVehicleIdGroups } from "../../../utils/vehicleIds";
 import { apiFetch } from "../../../config/api";
@@ -98,8 +99,6 @@ export default function BatterySwaps() {
 
   const [errors, setErrors] = useState({});
   const [banner, setBanner] = useState(null);
-  const [activeVehicleIds, setActiveVehicleIds] = useState([]);
-  const [unavailableBatteryIds, setUnavailableBatteryIds] = useState([]);
 
   const riderDropdownRef = useRef(null);
   const riderQueryRef = useRef(null);
@@ -125,6 +124,11 @@ export default function BatterySwaps() {
   const [batteryInQuery, setBatteryInQuery] = useState("");
 
   const canLoad = useMemo(() => !loading && Boolean(user?.uid), [loading, user?.uid]);
+  const {
+    unavailableVehicleIds: activeVehicleIds,
+    unavailableBatteryIds,
+    refreshAvailability,
+  } = useAvailability({ enabled: canLoad, pollMs: 15000 });
   const activeVehicleSet = useMemo(
     () => new Set((Array.isArray(activeVehicleIds) ? activeVehicleIds : []).map(normalizeForCompare).filter(Boolean)),
     [activeVehicleIds]
@@ -534,27 +538,11 @@ export default function BatterySwaps() {
     }
   };
 
-  const loadLiveAvailability = async () => {
-    try {
-      const data = await apiFetch("/api/availability");
-      setActiveVehicleIds(Array.isArray(data?.unavailableVehicleIds) ? data.unavailableVehicleIds : []);
-      setUnavailableBatteryIds(Array.isArray(data?.unavailableBatteryIds) ? data.unavailableBatteryIds : []);
-    } catch {
-      setActiveVehicleIds([]);
-      setUnavailableBatteryIds([]);
-    }
-  };
-
   useEffect(() => {
     if (!canLoad) return;
     loadAll();
-    loadLiveAvailability();
-
-    const interval = setInterval(() => {
-      loadLiveAvailability();
-    }, 15000);
-
-    return () => clearInterval(interval);
+    refreshAvailability();
+    return undefined;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canLoad]);
 
@@ -615,7 +603,7 @@ export default function BatterySwaps() {
       setUsageLoading(true);
       const usage = await getBatteryUsage();
       setUsageRows(usage || []);
-      await loadLiveAvailability();
+      await refreshAvailability();
     } catch (e) {
       setBanner({
         type: "error",

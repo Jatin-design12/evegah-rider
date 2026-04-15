@@ -11,6 +11,7 @@ import {
   VEHICLE_MODEL_OPTIONS,
 } from "../../utils/vehicleIds";
 import { apiFetch, getPublicConfig } from "../../config/api";
+import useAvailability from "../../hooks/useAvailability";
 import { RiderFormProvider } from "./RiderFormContext";
 import { useRiderForm } from "./useRiderForm";
 import { downloadRiderReceiptPdf } from "../../utils/riderReceiptPdf";
@@ -102,8 +103,7 @@ function RetainRiderInner() {
   const [batteryDropdownOpen, setBatteryDropdownOpen] = useState(false);
   const [batteryQuery, setBatteryQuery] = useState("");
 
-  const [unavailableVehicleIds, setUnavailableVehicleIds] = useState([]);
-  const [unavailableBatteryIds, setUnavailableBatteryIds] = useState([]);
+  const { unavailableVehicleIds, unavailableBatteryIds } = useAvailability({ pollMs: 15000 });
 
   const vehicleDropdownRef = useRef(null);
   const vehicleQueryRef = useRef(null);
@@ -146,24 +146,6 @@ function RetainRiderInner() {
     () => new Set((Array.isArray(unavailableBatteryIds) ? unavailableBatteryIds : []).map(normalizeIdForCompare).filter(Boolean)),
     [unavailableBatteryIds]
   );
-
-  useEffect(() => {
-    let mounted = true;
-    apiFetch("/api/availability")
-      .then((data) => {
-        if (!mounted) return;
-        setUnavailableVehicleIds(Array.isArray(data?.unavailableVehicleIds) ? data.unavailableVehicleIds : []);
-        setUnavailableBatteryIds(Array.isArray(data?.unavailableBatteryIds) ? data.unavailableBatteryIds : []);
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setUnavailableVehicleIds([]);
-        setUnavailableBatteryIds([]);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (isDefaultBatteryModel) {
