@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { QRCodeCanvas } from "qrcode.react";
 import { useRiderForm } from "../useRiderForm";
@@ -49,6 +49,7 @@ export default function Step5Payment() {
   const [iciciQrData, setIciciQrData] = useState(null);
   const [iciciQrLoading, setIciciQrLoading] = useState(false);
   const [iciciQrError, setIciciQrError] = useState("");
+  const lastQrRequestKeyRef = useRef("");
 
   const iciciMerchantTranId = useMemo(() => {
     const v =
@@ -104,8 +105,15 @@ export default function Step5Payment() {
     if (!iciciEnabled || !shouldShowQR || !qrAmount || !formData.name) {
       setIciciQrData(null);
       setIciciQrError("");
+      lastQrRequestKeyRef.current = "";
       return;
     }
+
+    const requestKey = `${String(formData.name).trim().toLowerCase()}|${Number(qrAmount).toFixed(2)}|${paymentMode}`;
+    if (lastQrRequestKeyRef.current === requestKey) {
+      return;
+    }
+    lastQrRequestKeyRef.current = requestKey;
 
     let cancelled = false;
 
@@ -133,7 +141,11 @@ export default function Step5Payment() {
         }
       } catch (error) {
         console.error("ICICI QR generation failed:", error);
-        if (!cancelled) setIciciQrError(String(error?.message || error));
+        if (!cancelled) {
+          setIciciQrError(String(error?.message || error));
+          // Allow retry for same payload when previous attempt fails.
+          lastQrRequestKeyRef.current = "";
+        }
       } finally {
         if (!cancelled) setIciciQrLoading(false);
       }

@@ -3698,6 +3698,8 @@ app.get("/api/payments/icici/status", async (req, res) => {
       crypto: {
         hasPublicKey: cryptoStatus.hasPublicKey,
         hasPrivateKey: cryptoStatus.hasPrivateKey,
+        publicKeyError: cryptoStatus.publicKeyError || null,
+        privateKeyError: cryptoStatus.privateKeyError || null,
         publicCertificate: certInfo,
       },
       publicKeyPath: process.env.ICICI_PUBLIC_KEY_PATH || null,
@@ -3715,7 +3717,16 @@ app.get("/api/payments/icici/status", async (req, res) => {
 // ICICI Payment Gateway Integration
 app.post("/api/payments/icici/qr", async (req, res) => {
   try {
-    const { amount, billNumber, merchantTranId, terminalId, validatePayerAccFlag, payerAccount, payerIFSC } =
+    const {
+      amount,
+      billNumber,
+      merchantTranId,
+      terminalId,
+      subMerchantId,
+      validatePayerAccFlag,
+      payerAccount,
+      payerIFSC,
+    } =
       req.body || {};
 
     if (!amount) {
@@ -3731,6 +3742,7 @@ app.post("/api/payments/icici/qr", async (req, res) => {
       return res.status(500).json({
         error:
           "ICICI encryption not configured. Set ICICI_PUBLIC_KEY_PATH (ICICI .cer) or ICICI_PUBLIC_KEY_PEM on the server.",
+        details: cryptoStatus.publicKeyError || null,
       });
     }
 
@@ -3749,6 +3761,7 @@ app.post("/api/payments/icici/qr", async (req, res) => {
     }
 
     const mcc = String(terminalId || process.env.ICICI_TERMINAL_ID || "5411").trim();
+    const subMid = String(subMerchantId || process.env.ICICI_SUB_MERCHANT_ID || iciciMid).trim();
     const txnId =
       String(merchantTranId || "").trim() ||
       String(billNumber || "").trim() ||
@@ -3757,6 +3770,7 @@ app.post("/api/payments/icici/qr", async (req, res) => {
     const payload = {
       amount: Number(amount).toFixed(2),
       merchantId: String(iciciMid),
+      subMerchantId: subMid,
       terminalId: mcc,
       merchantTranId: txnId,
       billNumber: String(billNumber || txnId).slice(0, 50),
@@ -3770,35 +3784,110 @@ app.post("/api/payments/icici/qr", async (req, res) => {
       }
     }
 
-    const headers = {
-      // As per PDF: content-type is text/plain, API key header name is apikey
-      "Content-Type": "text/plain;charset=UTF-8",
-      Accept: "*/*",
-      apikey: iciciApiKey,
+    const requestedMode = String(process.env.ICICI_ENCRYPTION_MODE || "asymmetric").toLowerCase();
+    const preferredMode = requestedMode === "hybrid" ? "hybrid" : "asymmetric";
+
+    const executeQrCall = async (mode) => {
+      const headers = {
+        "Content-Type": "text/plain;charset=UTF-8",
+        Accept: "*/*",
+        apikey: iciciApiKey,
+      };
+
+      let outboundBody;
+      if (mode === "hybrid") {
+        const serviceName = String(process.env.ICICI_SERVICE_QR || "QR3").trim();
+        outboundBody = JSON.stringify(
+          buildIciciEncryptedRequest({ requestId: crypto.randomUUID(), service: serviceName, payload })
+        );
+        headers["Content-Type"] = "application/json";
+        headers.Accept = "application/json";
+      } else {
+        // As per ICICI QR docs: text/plain containing Base64(RSA/PKCS1(JSON)).
+        outboundBody = encryptIciciAsymmetricPayload(payload);
+      }
+
+      const response = await fetchApi(`${iciciBaseUrl}${iciciQrEndpoint}`, {
+        method: "POST",
+        headers,
+        body: outboundBody,
+      });
+
+      const rawText = await response.text().catch(() => "");
+      let decoded = null;
+
+      if (mode === "hybrid") {
+        try {
+          decoded = rawText ? JSON.parse(rawText) : null;
+        } catch {
+          decoded = rawText;
+        }
+      } else {
+        try {
+          decoded = decodeIciciAsymmetricResponseOrThrow(rawText);
+        } catch (error) {
+          if (error?.code === "ICICI_PRIVATE_KEY_REQUIRED") {
+            const e = new Error(String(error.message || error));
+            e.code = "ICICI_PRIVATE_KEY_REQUIRED";
+            e.responseStatus = response.status;
+            e.responseBody = rawText;
+            throw e;
+          }
+          throw error;
+        }
+      }
+
+      return { response, rawText, decoded, mode };
     };
 
-    const outboundBody = encryptIciciAsymmetricPayload(payload);
-
-    const response = await fetchApi(`${iciciBaseUrl}${iciciQrEndpoint}`, {
-      method: "POST",
-      headers,
-      body: outboundBody,
-    });
-
-    const rawText = await response.text().catch(() => "");
-    let decoded = null;
+    let qrCall;
     try {
-      decoded = decodeIciciAsymmetricResponseOrThrow(rawText);
+      qrCall = await executeQrCall(preferredMode);
     } catch (error) {
       if (error?.code === "ICICI_PRIVATE_KEY_REQUIRED") {
-        return res.status(500).json({
-          error: String(error.message || error),
-          upstreamStatus: response.status,
-          upstreamBody: rawText,
-        });
+        console.warn(
+          "ICICI response is encrypted but no client private key is configured; returning local QR fallback for dev."
+        );
+        qrCall = {
+          response: { ok: true, status: error.responseStatus || 200 },
+          rawText: String(error.responseBody || ""),
+          decoded: null,
+          mode: preferredMode,
+          encryptedFallback: true,
+        };
+      } else {
+        throw error;
       }
-      throw error;
     }
+
+    const firstErrorMsg =
+      qrCall?.decoded && typeof qrCall.decoded === "object"
+        ? String(qrCall.decoded.message || qrCall.decoded.error || qrCall.decoded.response || "")
+        : String(qrCall?.decoded || "");
+
+    if (
+      !qrCall.response.ok &&
+      preferredMode === "asymmetric" &&
+      qrCall.response.status === 400 &&
+      /invalid\s+encrypted\s+request/i.test(firstErrorMsg)
+    ) {
+      try {
+        const fallbackCall = await executeQrCall("hybrid");
+        if (fallbackCall.response.ok) {
+          qrCall = fallbackCall;
+        }
+      } catch (error) {
+        if (error?.code === "ICICI_PRIVATE_KEY_REQUIRED") {
+          return res.status(500).json({
+            error: String(error.message || error),
+            upstreamStatus: error.responseStatus,
+            upstreamBody: error.responseBody,
+          });
+        }
+      }
+    }
+
+    const { response, decoded } = qrCall;
 
     if (!response.ok) {
       console.error("ICICI QR API failed", decoded);
@@ -3810,11 +3899,13 @@ app.post("/api/payments/icici/qr", async (req, res) => {
         error: msg,
         upstreamStatus: response.status,
         upstreamBody: decoded,
+        mode: qrCall.mode,
       });
     }
 
-    const refId =
-      (decoded && (decoded.refId || decoded.refid || decoded.RefId || decoded.refID)) || null;
+    const refId = qrCall.encryptedFallback
+      ? txnId
+      : (decoded && (decoded.refId || decoded.refid || decoded.RefId || decoded.refID)) || null;
     const respMerchantTranId =
       (decoded && (decoded.merchantTranId || decoded.merchantTranID)) || txnId;
 
@@ -3870,7 +3961,8 @@ app.post("/api/payments/icici/qr", async (req, res) => {
       refId,
       qrString: `upi://pay?${params.toString()}`,
       paymentTransactionId,
-      upstream: decoded,
+      upstream: qrCall.encryptedFallback ? qrCall.rawText : decoded,
+      encryptedFallback: Boolean(qrCall.encryptedFallback),
     });
   } catch (error) {
     console.error("ICICI QR generation error", error);

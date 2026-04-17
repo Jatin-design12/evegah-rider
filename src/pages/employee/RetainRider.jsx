@@ -21,7 +21,14 @@ const sanitizeNumericInput = (value, maxLength) =>
     .replace(/\D/g, "")
     .slice(0, maxLength);
 
-const toDateTimeLocal = (date = new Date()) => {
+const toDateTimeLocal = (value = new Date()) => {
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+      now.getDate()
+    ).padStart(2, "0")}T${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  }
   const pad = (value) => String(value).padStart(2, "0");
   const yyyy = date.getFullYear();
   const mm = pad(date.getMonth() + 1);
@@ -478,7 +485,10 @@ function RetainRiderInner() {
         }
       } catch (error) {
         console.error("ICICI QR generation failed:", error);
-        if (!cancelled) setIciciQrError(String(error?.message || error));
+        if (!cancelled) {
+          const details = String(error?.data?.details || "").trim();
+          setIciciQrError(details ? `${String(error?.message || error)} (${details})` : String(error?.message || error));
+        }
       } finally {
         if (!cancelled) setIciciQrLoading(false);
       }

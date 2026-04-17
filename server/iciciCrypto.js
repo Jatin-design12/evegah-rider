@@ -13,9 +13,9 @@ function resolveExistingPath(p) {
   if (path.isAbsolute(raw)) return fs.existsSync(raw) ? raw : null;
 
   const candidates = [
-    path.resolve(process.cwd(), raw),
-    path.resolve(__dirname, raw),
     path.resolve(__dirname, "..", raw),
+    path.resolve(__dirname, raw),
+    path.resolve(process.cwd(), raw),
     path.resolve(__dirname, "..", "..", raw),
   ];
 
@@ -24,6 +24,25 @@ function resolveExistingPath(p) {
   }
 
   return null;
+}
+
+function normalizeEnvPemValue(rawValue) {
+  const raw = String(rawValue || "").trim();
+  if (!raw) return "";
+
+  // Support values wrapped in single/double quotes in .env.
+  const unquoted = raw.replace(/^['\"]|['\"]$/g, "");
+  // Support PEM pasted as literal \n sequences.
+  const withNewlines = unquoted.replace(/\\n/g, "\n").trim();
+  return withNewlines;
+}
+
+function looksLikeBase64Der(text) {
+  const s = String(text || "").trim();
+  if (!s || s.length < 128) return false;
+  // DER-encoded cert/key commonly starts with MII when Base64-wrapped.
+  if (!/^MII[A-Za-z0-9+/=\s]+$/.test(s)) return false;
+  return s.replace(/\s+/g, "").length % 4 === 0;
 }
 
 function readKeyMaterialFromEnvOrPath({ pemEnv, pathEnv }) {
@@ -45,15 +64,67 @@ function readKeyMaterialFromEnvOrPath({ pemEnv, pathEnv }) {
   return buf;
 }
 
+function readKeyMaterialFromResolvedPath(resolvedPath) {
+  if (!resolvedPath) return null;
+  const buf = fs.readFileSync(resolvedPath);
+  const asText = buf.toString("utf8");
+  if (asText.includes("-----BEGIN")) return asText;
+  return buf;
+}
+
 let cachedPublicKey = null;
 let cachedPrivateKey = null;
 let cachedPublicCertificateInfo = null;
 
 function readIciciPublicKeyMaterial() {
-  return readKeyMaterialFromEnvOrPath({
-    pemEnv: "ICICI_PUBLIC_KEY_PEM",
-    pathEnv: "ICICI_PUBLIC_KEY_PATH",
-  });
+  const pem = normalizeEnvPemValue(process.env.ICICI_PUBLIC_KEY_PEM || "");
+  if (pem) {
+    // Common misconfiguration: ICICI_PUBLIC_KEY_PEM accidentally contains a file path.
+    if (!pem.includes("-----BEGIN") && /[\\/]|\.pem$|\.cer$/i.test(pem)) {
+      const resolvedFromPemPath = resolveExistingPath(pem);
+      if (resolvedFromPemPath) {
+        return readKeyMaterialFromResolvedPath(resolvedFromPemPath);
+      }
+    }
+
+    if (pem.includes("-----BEGIN")) {
+      return pem;
+    }
+
+    if (looksLikeBase64Der(pem)) {
+      return Buffer.from(pem.replace(/\s+/g, ""), "base64");
+    }
+
+    return pem;
+  }
+
+  const configuredPath = String(process.env.ICICI_PUBLIC_KEY_PATH || "").trim();
+  if (configuredPath) {
+    const resolvedConfiguredPath = resolveExistingPath(configuredPath);
+    if (resolvedConfiguredPath) {
+      return readKeyMaterialFromResolvedPath(resolvedConfiguredPath);
+    }
+  }
+
+  const fallbackPaths = [
+    "./keys/icici_public_key.pem",
+    "../keys/icici_public_key.pem",
+    "./keys/icici_public_key.cer",
+    "../keys/icici_public_key.cer",
+  ];
+
+  for (const fallbackPath of fallbackPaths) {
+    const resolvedFallbackPath = resolveExistingPath(fallbackPath);
+    if (resolvedFallbackPath) {
+      return readKeyMaterialFromResolvedPath(resolvedFallbackPath);
+    }
+  }
+
+  if (configuredPath) {
+    throw new Error(`ICICI_PUBLIC_KEY_PATH points to a missing file: ${configuredPath}`);
+  }
+
+  return null;
 }
 
 function readIciciPublicCertificateInfo() {
@@ -99,11 +170,37 @@ function getIciciPublicKey() {
 
   if (!material) return null;
 
-  // .cer files are commonly DER or PEM. Let Node auto-detect PEM; use DER/SPKI otherwise.
-  const keyObject =
-    typeof material === "string"
-      ? crypto.createPublicKey(material)
-      : crypto.createPublicKey({ key: material, format: "der", type: "spki" });
+  let keyObject = null;
+
+  if (typeof material === "string") {
+    const text = material.trim();
+    try {
+      if (text.includes("BEGIN CERTIFICATE")) {
+        keyObject = new crypto.X509Certificate(text).publicKey;
+      } else {
+        keyObject = crypto.createPublicKey(text);
+      }
+    } catch (firstError) {
+      // Fallback for odd-but-seen PEM env formatting in local shells.
+      if (looksLikeBase64Der(text)) {
+        const der = Buffer.from(text.replace(/\s+/g, ""), "base64");
+        try {
+          keyObject = new crypto.X509Certificate(der).publicKey;
+        } catch {
+          keyObject = crypto.createPublicKey({ key: der, format: "der", type: "spki" });
+        }
+      } else {
+        throw firstError;
+      }
+    }
+  } else {
+    // .cer files may be either DER/SPKI public key or DER/X509 certificate.
+    try {
+      keyObject = crypto.createPublicKey({ key: material, format: "der", type: "spki" });
+    } catch {
+      keyObject = new crypto.X509Certificate(material).publicKey;
+    }
+  }
 
   cachedPublicKey = keyObject;
   return keyObject;
