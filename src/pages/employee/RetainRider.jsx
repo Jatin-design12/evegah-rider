@@ -11,6 +11,7 @@ import {
   VEHICLE_MODEL_OPTIONS,
 } from "../../utils/vehicleIds";
 import { apiFetch, getPublicConfig } from "../../config/api";
+import useAvailability from "../../hooks/useAvailability";
 import { RiderFormProvider } from "./RiderFormContext";
 import { useRiderForm } from "./useRiderForm";
 import { downloadRiderReceiptPdf } from "../../utils/riderReceiptPdf";
@@ -20,7 +21,14 @@ const sanitizeNumericInput = (value, maxLength) =>
     .replace(/\D/g, "")
     .slice(0, maxLength);
 
-const toDateTimeLocal = (date = new Date()) => {
+const toDateTimeLocal = (value = new Date()) => {
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(
+      now.getDate()
+    ).padStart(2, "0")}T${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  }
   const pad = (value) => String(value).padStart(2, "0");
   const yyyy = date.getFullYear();
   const mm = pad(date.getMonth() + 1);
@@ -102,8 +110,7 @@ function RetainRiderInner() {
   const [batteryDropdownOpen, setBatteryDropdownOpen] = useState(false);
   const [batteryQuery, setBatteryQuery] = useState("");
 
-  const [unavailableVehicleIds, setUnavailableVehicleIds] = useState([]);
-  const [unavailableBatteryIds, setUnavailableBatteryIds] = useState([]);
+  const { unavailableVehicleIds, unavailableBatteryIds } = useAvailability({ pollMs: 15000 });
 
   const vehicleDropdownRef = useRef(null);
   const vehicleQueryRef = useRef(null);
@@ -146,24 +153,6 @@ function RetainRiderInner() {
     () => new Set((Array.isArray(unavailableBatteryIds) ? unavailableBatteryIds : []).map(normalizeIdForCompare).filter(Boolean)),
     [unavailableBatteryIds]
   );
-
-  useEffect(() => {
-    let mounted = true;
-    apiFetch("/api/availability")
-      .then((data) => {
-        if (!mounted) return;
-        setUnavailableVehicleIds(Array.isArray(data?.unavailableVehicleIds) ? data.unavailableVehicleIds : []);
-        setUnavailableBatteryIds(Array.isArray(data?.unavailableBatteryIds) ? data.unavailableBatteryIds : []);
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setUnavailableVehicleIds([]);
-        setUnavailableBatteryIds([]);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (isDefaultBatteryModel) {
@@ -496,7 +485,10 @@ function RetainRiderInner() {
         }
       } catch (error) {
         console.error("ICICI QR generation failed:", error);
-        if (!cancelled) setIciciQrError(String(error?.message || error));
+        if (!cancelled) {
+          const details = String(error?.data?.details || "").trim();
+          setIciciQrError(details ? `${String(error?.message || error)} (${details})` : String(error?.message || error));
+        }
       } finally {
         if (!cancelled) setIciciQrLoading(false);
       }

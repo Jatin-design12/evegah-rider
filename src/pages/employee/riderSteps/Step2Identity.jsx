@@ -8,7 +8,7 @@ import {
   getVehicleIdGroupsForModel,
   VEHICLE_MODEL_OPTIONS,
 } from "../../../utils/vehicleIds";
-import { apiFetch } from "../../../config/api";
+import useAvailability from "../../../hooks/useAvailability";
 
 const toDateTimeLocal = (date = new Date()) => {
   const pad = (value) => String(value).padStart(2, "0");
@@ -47,8 +47,7 @@ export default function Step2Identity() {
   const [batteryDropdownOpen, setBatteryDropdownOpen] = useState(false);
   const [batteryQuery, setBatteryQuery] = useState("");
 
-  const [unavailableVehicleIds, setUnavailableVehicleIds] = useState([]);
-  const [unavailableBatteryIds, setUnavailableBatteryIds] = useState([]);
+  const { unavailableVehicleIds, unavailableBatteryIds } = useAvailability({ pollMs: 15000 });
 
   const PACKAGE_OPTIONS = ["minute", "hourly", "daily", "weekly", "monthly"];
   const PAYMENT_OPTIONS = ["cash", "online", "split"];
@@ -161,24 +160,6 @@ export default function Step2Identity() {
       updateForm({ batteryId: "" });
     }
   }, [isDefaultBatteryModel, formData.batteryId, updateForm]);
-
-  useEffect(() => {
-    let mounted = true;
-    apiFetch("/api/availability")
-      .then((data) => {
-        if (!mounted) return;
-        setUnavailableVehicleIds(Array.isArray(data?.unavailableVehicleIds) ? data.unavailableVehicleIds : []);
-        setUnavailableBatteryIds(Array.isArray(data?.unavailableBatteryIds) ? data.unavailableBatteryIds : []);
-      })
-      .catch(() => {
-        if (!mounted) return;
-        setUnavailableVehicleIds([]);
-        setUnavailableBatteryIds([]);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   const filteredVehicleGroups = useMemo(
     () => filterVehicleIdGroups(vehicleQuery, getVehicleIdGroupsForModel(formData.bikeModel)),

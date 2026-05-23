@@ -32,11 +32,39 @@ export default function AdminDashboard() {
 	const [rentalsByPackageData, setRentalsByPackageData] = useState([]);
 	const [rentalsByZoneData, setRentalsByZoneData] = useState([]);
 	const [timeRange, setTimeRange] = useState("6months");
+	const [isResettingAvailability, setIsResettingAvailability] = useState(false);
+	const [availabilityResetMessage, setAvailabilityResetMessage] = useState("");
+	const [availabilityResetError, setAvailabilityResetError] = useState("");
 
 	const inr = useMemo(
 		() => new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }),
 		[]
 	);
+
+	const handleResetAvailability = async () => {
+		const confirmed = window.confirm(
+			"Reset unavailable status for all vehicles and batteries? This ignores active rentals created before now."
+		);
+		if (!confirmed) return;
+
+		setAvailabilityResetMessage("");
+		setAvailabilityResetError("");
+		setIsResettingAvailability(true);
+
+		try {
+			const data = await apiFetch("/api/admin/availability/reset", {
+				method: "POST",
+				body: { reason: "manual-admin-dashboard-reset" },
+			});
+			const parsed = data?.resetAt ? new Date(data.resetAt) : null;
+			const atText = parsed && !Number.isNaN(parsed.getTime()) ? parsed.toLocaleString() : "now";
+			setAvailabilityResetMessage(`Vehicle and battery availability reset at ${atText}.`);
+		} catch (e) {
+			setAvailabilityResetError(String(e?.message || "Unable to reset availability"));
+		} finally {
+			setIsResettingAvailability(false);
+		}
+	};
 
 
 	useEffect(() => {
@@ -170,6 +198,15 @@ export default function AdminDashboard() {
 									</p>
 								</div>
 								<div className="flex items-center space-x-4">
+									<button
+										type="button"
+										onClick={handleResetAvailability}
+										disabled={isResettingAvailability}
+										className="inline-flex items-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 px-5 py-3 text-sm font-semibold text-rose-700 shadow-lg transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+									>
+										<RotateCcw className={`h-4 w-4 ${isResettingAvailability ? "animate-spin" : ""}`} aria-hidden />
+										{isResettingAvailability ? "Resetting..." : "Reset Vehicle & Battery Status"}
+									</button>
 									<div className="bg-white/80 backdrop-blur-lg rounded-3xl px-8 py-4 shadow-2xl border border-white/30">
 										<div className="text-sm text-slate-500 font-medium">Last updated</div>
 										<div className="text-2xl font-bold text-slate-800">
@@ -179,6 +216,18 @@ export default function AdminDashboard() {
 								</div>
 							</div>
 						</div>
+
+						{availabilityResetMessage ? (
+							<div className="mb-6 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm font-medium text-emerald-800 shadow-sm">
+								{availabilityResetMessage}
+							</div>
+						) : null}
+
+						{availabilityResetError ? (
+							<div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-medium text-red-700 shadow-sm">
+								{availabilityResetError}
+							</div>
+						) : null}
 
 						{error ? (
 							<div className="mb-6 bg-red-50/90 backdrop-blur-lg border border-red-200/50 rounded-3xl p-8 shadow-2xl">

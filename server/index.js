@@ -18,6 +18,7 @@ import {
   decryptIciciAsymmetricPayload,
   encryptIciciAsymmetricPayload,
   getIciciCryptoStatus,
+  getIciciPublicCertificateInfo,
 } from "./iciciCrypto.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -615,17 +616,99 @@ function normalizeIdForCompare(value) {
 }
 
 const DEFAULT_SHARED_BATTERY_ID = "DEFAULT";
+const AVAILABILITY_RESET_SINGLETON = true;
+
+let availabilityResetTableReady = false;
+
+function normalizeAdminIdentity(value) {
+  return String(value || "").trim();
+}
+
+async function ensureAvailabilityResetTable({ client }) {
+  if (availabilityResetTableReady) return;
+
+  await client.query(
+    `create table if not exists public.availability_resets (
+       singleton boolean primary key default true,
+       reset_at timestamptz not null default now(),
+       reset_by_uid text,
+       reset_by_email text,
+       reason text,
+       updated_at timestamptz not null default now()
+     )`
+  );
+
+  await client.query(
+    `insert into public.availability_resets (singleton, reset_at, reason)
+     values ($1, to_timestamp(0), 'initial')
+     on conflict (singleton) do nothing`,
+    [AVAILABILITY_RESET_SINGLETON]
+  );
+
+  availabilityResetTableReady = true;
+}
+
+async function getAvailabilityResetAt({ client }) {
+  await ensureAvailabilityResetTable({ client });
+
+  const q = await client.query(
+    `select reset_at
+     from public.availability_resets
+     where singleton = $1
+     limit 1`,
+    [AVAILABILITY_RESET_SINGLETON]
+  );
+
+  const raw = q.rows?.[0]?.reset_at;
+  if (!raw) return null;
+
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed.toISOString();
+}
+
+async function resetAvailabilityCheckpoint({ client, resetByUid = "", resetByEmail = "", reason = "" }) {
+  await ensureAvailabilityResetTable({ client });
+
+  const q = await client.query(
+    `insert into public.availability_resets (singleton, reset_at, reset_by_uid, reset_by_email, reason, updated_at)
+     values ($1, now(), nullif($2::text, ''), nullif($3::text, ''), nullif($4::text, ''), now())
+     on conflict (singleton) do update
+       set reset_at = excluded.reset_at,
+           reset_by_uid = excluded.reset_by_uid,
+           reset_by_email = excluded.reset_by_email,
+           reason = excluded.reason,
+           updated_at = now()
+     returning reset_at`,
+    [
+      AVAILABILITY_RESET_SINGLETON,
+      normalizeAdminIdentity(resetByUid),
+      normalizeAdminIdentity(resetByEmail).toLowerCase(),
+      normalizeAdminIdentity(reason),
+    ]
+  );
+
+  const raw = q.rows?.[0]?.reset_at;
+  const parsed = raw ? new Date(raw) : null;
+  return parsed && !Number.isNaN(parsed.getTime()) ? parsed.toISOString() : new Date().toISOString();
+}
 
 function isSharedDefaultBatteryId(value) {
   return normalizeIdForCompare(value) === DEFAULT_SHARED_BATTERY_ID;
 }
 
 async function getActiveAvailability({ client }) {
+  const resetAtIso = await getAvailabilityResetAt({ client }).catch((error) => {
+    console.warn("Failed to read availability reset checkpoint:", String(error?.message || error));
+    return null;
+  });
+
   const q = await client.query(
     `with active_rentals as (
        select r.id as rental_id, r.start_time, r.bike_id, r.battery_id, r.vehicle_number
        from public.rentals r
        where not exists (select 1 from public.returns ret where ret.rental_id = r.id)
+         and ($1::timestamptz is null or r.start_time >= $1::timestamptz)
      ),
      active_with_current as (
        select ar.rental_id,
@@ -649,7 +732,8 @@ async function getActiveAvailability({ client }) {
        coalesce(array_agg(distinct bike_id) filter (where coalesce(bike_id,'') <> ''), '{}') as vehicle_ids,
        coalesce(array_agg(distinct vehicle_number) filter (where coalesce(vehicle_number,'') <> ''), '{}') as vehicle_numbers,
        coalesce(array_agg(distinct current_battery_id) filter (where coalesce(current_battery_id,'') <> ''), '{}') as battery_ids
-     from active_with_current`
+      from active_with_current`,
+     [resetAtIso]
   );
 
   const row = q.rows?.[0] || {};
@@ -670,6 +754,7 @@ async function getActiveAvailability({ client }) {
     unavailableVehicleIdSet: vehicleIdSet,
     unavailableVehicleNumberSet: vehicleNumberSet,
     unavailableBatteryIdSet: batteryIdSet,
+    availabilityResetAt: resetAtIso,
   };
 }
 
@@ -2130,6 +2215,24 @@ app.get("/api/availability", async (_req, res) => {
   }
 });
 
+app.post("/api/admin/availability/reset", requireAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const resetAt = await resetAvailabilityCheckpoint({
+      client,
+      resetByUid: req.user?.uid || req.user?.user_id || req.user?.sub || "",
+      resetByEmail: req.user?.email || "",
+      reason: req.body?.reason || "manual-admin-reset",
+    });
+
+    res.json({ ok: true, resetAt });
+  } catch (error) {
+    res.status(500).json({ error: String(error?.message || error) });
+  } finally {
+    client.release();
+  }
+});
+
 function parseMoneyValue(value) {
   if (value === undefined || value === null) return null;
   const s = String(value).trim();
@@ -2162,6 +2265,8 @@ function firstAnyMoneyValue(values) {
   }
   return null;
 }
+
+const warnedMissingTables = new Set();
 
 async function resolveReceiptAmountPaid({ formData, registration }) {
   const merchantTranId =
@@ -2208,7 +2313,18 @@ async function resolveReceiptAmountPaid({ formData, registration }) {
     }
   } catch (e) {
     // Non-fatal; we can still derive from the request payload.
-    console.warn("resolveReceiptAmountPaid: DB lookup failed", String(e?.message || e));
+    // Avoid flooding PM2 logs when a migration table is missing.
+    if (String(e?.code || "") === "42P01") {
+      const m = String(e?.message || e || "");
+      const tableMatch = m.match(/relation\s+"([^"]+)"\s+does not exist/i);
+      const key = tableMatch?.[1] || "unknown_table";
+      if (!warnedMissingTables.has(key)) {
+        warnedMissingTables.add(key);
+        console.warn("resolveReceiptAmountPaid: DB lookup skipped (missing table)", key);
+      }
+    } else {
+      console.warn("resolveReceiptAmountPaid: DB lookup failed", String(e?.message || e));
+    }
   }
 
   // 2) Fallback: derive from payload (ignore blanks; prefer positive over zero)
@@ -2960,7 +3076,7 @@ app.get("/api/riders/lookup", async (req, res) => {
 
 app.get("/api/riders", async (req, res) => {
   const page = Math.max(1, Number(req.query.page || 1));
-  const limit = Math.min(100, Math.max(1, Number(req.query.limit || 10)));
+  const limit = Math.min(2000, Math.max(1, Number(req.query.limit || 10)));
   const offset = (page - 1) * limit;
 
   const search = String(req.query.search || "").trim();
@@ -3576,11 +3692,15 @@ app.patch("/api/rentals/:id", async (req, res) => {
 app.get("/api/payments/icici/status", async (req, res) => {
   try {
     const cryptoStatus = getIciciCryptoStatus();
+    const certInfo = getIciciPublicCertificateInfo();
     res.json({
       configured: Boolean(iciciBaseUrl && iciciQrEndpoint && iciciApiKey && iciciMid),
       crypto: {
         hasPublicKey: cryptoStatus.hasPublicKey,
         hasPrivateKey: cryptoStatus.hasPrivateKey,
+        publicKeyError: cryptoStatus.publicKeyError || null,
+        privateKeyError: cryptoStatus.privateKeyError || null,
+        publicCertificate: certInfo,
       },
       publicKeyPath: process.env.ICICI_PUBLIC_KEY_PATH || null,
       privateKeyPath: process.env.ICICI_CLIENT_PRIVATE_KEY_P12_PATH || null,
@@ -3597,7 +3717,16 @@ app.get("/api/payments/icici/status", async (req, res) => {
 // ICICI Payment Gateway Integration
 app.post("/api/payments/icici/qr", async (req, res) => {
   try {
-    const { amount, billNumber, merchantTranId, terminalId, validatePayerAccFlag, payerAccount, payerIFSC } =
+    const {
+      amount,
+      billNumber,
+      merchantTranId,
+      terminalId,
+      subMerchantId,
+      validatePayerAccFlag,
+      payerAccount,
+      payerIFSC,
+    } =
       req.body || {};
 
     if (!amount) {
@@ -3613,7 +3742,16 @@ app.post("/api/payments/icici/qr", async (req, res) => {
       return res.status(500).json({
         error:
           "ICICI encryption not configured. Set ICICI_PUBLIC_KEY_PATH (ICICI .cer) or ICICI_PUBLIC_KEY_PEM on the server.",
+        details: cryptoStatus.publicKeyError || null,
       });
+    }
+
+    const certInfo = getIciciPublicCertificateInfo();
+    if (certInfo?.isExpired) {
+      console.warn(
+        "ICICI public certificate is expired; continuing QR generation attempt because the gateway may still accept the encrypted payload.",
+        certInfo
+      );
     }
 
     if (!fetchApi) {
@@ -3623,6 +3761,7 @@ app.post("/api/payments/icici/qr", async (req, res) => {
     }
 
     const mcc = String(terminalId || process.env.ICICI_TERMINAL_ID || "5411").trim();
+    const subMid = String(subMerchantId || process.env.ICICI_SUB_MERCHANT_ID || iciciMid).trim();
     const txnId =
       String(merchantTranId || "").trim() ||
       String(billNumber || "").trim() ||
@@ -3631,6 +3770,7 @@ app.post("/api/payments/icici/qr", async (req, res) => {
     const payload = {
       amount: Number(amount).toFixed(2),
       merchantId: String(iciciMid),
+      subMerchantId: subMid,
       terminalId: mcc,
       merchantTranId: txnId,
       billNumber: String(billNumber || txnId).slice(0, 50),
@@ -3644,54 +3784,110 @@ app.post("/api/payments/icici/qr", async (req, res) => {
       }
     }
 
-    const mode = String(process.env.ICICI_ENCRYPTION_MODE || "asymmetric").toLowerCase();
-    const headers = {
-      // As per PDF: content-type is text/plain, API key header name is apikey
-      "Content-Type": "text/plain;charset=UTF-8",
-      Accept: "*/*",
-      apikey: iciciApiKey,
+    const requestedMode = String(process.env.ICICI_ENCRYPTION_MODE || "asymmetric").toLowerCase();
+    const preferredMode = requestedMode === "hybrid" ? "hybrid" : "asymmetric";
+
+    const executeQrCall = async (mode) => {
+      const headers = {
+        "Content-Type": "text/plain;charset=UTF-8",
+        Accept: "*/*",
+        apikey: iciciApiKey,
+      };
+
+      let outboundBody;
+      if (mode === "hybrid") {
+        const serviceName = String(process.env.ICICI_SERVICE_QR || "QR3").trim();
+        outboundBody = JSON.stringify(
+          buildIciciEncryptedRequest({ requestId: crypto.randomUUID(), service: serviceName, payload })
+        );
+        headers["Content-Type"] = "application/json";
+        headers.Accept = "application/json";
+      } else {
+        // As per ICICI QR docs: text/plain containing Base64(RSA/PKCS1(JSON)).
+        outboundBody = encryptIciciAsymmetricPayload(payload);
+      }
+
+      const response = await fetchApi(`${iciciBaseUrl}${iciciQrEndpoint}`, {
+        method: "POST",
+        headers,
+        body: outboundBody,
+      });
+
+      const rawText = await response.text().catch(() => "");
+      let decoded = null;
+
+      if (mode === "hybrid") {
+        try {
+          decoded = rawText ? JSON.parse(rawText) : null;
+        } catch {
+          decoded = rawText;
+        }
+      } else {
+        try {
+          decoded = decodeIciciAsymmetricResponseOrThrow(rawText);
+        } catch (error) {
+          if (error?.code === "ICICI_PRIVATE_KEY_REQUIRED") {
+            const e = new Error(String(error.message || error));
+            e.code = "ICICI_PRIVATE_KEY_REQUIRED";
+            e.responseStatus = response.status;
+            e.responseBody = rawText;
+            throw e;
+          }
+          throw error;
+        }
+      }
+
+      return { response, rawText, decoded, mode };
     };
 
-    let outboundBody;
-    if (mode === "hybrid") {
-      const serviceName = String(process.env.ICICI_SERVICE_QR || "QR3").trim();
-      outboundBody = JSON.stringify(
-        buildIciciEncryptedRequest({ requestId: txnId, service: serviceName, payload })
-      );
-      headers["Content-Type"] = "application/json";
-      headers.Accept = "application/json";
-    } else {
-      outboundBody = encryptIciciAsymmetricPayload(payload);
+    let qrCall;
+    try {
+      qrCall = await executeQrCall(preferredMode);
+    } catch (error) {
+      if (error?.code === "ICICI_PRIVATE_KEY_REQUIRED") {
+        console.warn(
+          "ICICI response is encrypted but no client private key is configured; returning local QR fallback for dev."
+        );
+        qrCall = {
+          response: { ok: true, status: error.responseStatus || 200 },
+          rawText: String(error.responseBody || ""),
+          decoded: null,
+          mode: preferredMode,
+          encryptedFallback: true,
+        };
+      } else {
+        throw error;
+      }
     }
 
-    const response = await fetchApi(`${iciciBaseUrl}${iciciQrEndpoint}`, {
-      method: "POST",
-      headers,
-      body: outboundBody,
-    });
+    const firstErrorMsg =
+      qrCall?.decoded && typeof qrCall.decoded === "object"
+        ? String(qrCall.decoded.message || qrCall.decoded.error || qrCall.decoded.response || "")
+        : String(qrCall?.decoded || "");
 
-    const rawText = await response.text().catch(() => "");
-    let decoded = null;
-    if (mode === "hybrid") {
+    if (
+      !qrCall.response.ok &&
+      preferredMode === "asymmetric" &&
+      qrCall.response.status === 400 &&
+      /invalid\s+encrypted\s+request/i.test(firstErrorMsg)
+    ) {
       try {
-        decoded = rawText ? JSON.parse(rawText) : null;
-      } catch {
-        decoded = rawText;
-      }
-    } else {
-      try {
-        decoded = decodeIciciAsymmetricResponseOrThrow(rawText);
+        const fallbackCall = await executeQrCall("hybrid");
+        if (fallbackCall.response.ok) {
+          qrCall = fallbackCall;
+        }
       } catch (error) {
         if (error?.code === "ICICI_PRIVATE_KEY_REQUIRED") {
           return res.status(500).json({
             error: String(error.message || error),
-            upstreamStatus: response.status,
-            upstreamBody: rawText,
+            upstreamStatus: error.responseStatus,
+            upstreamBody: error.responseBody,
           });
         }
-        throw error;
       }
     }
+
+    const { response, decoded } = qrCall;
 
     if (!response.ok) {
       console.error("ICICI QR API failed", decoded);
@@ -3703,11 +3899,13 @@ app.post("/api/payments/icici/qr", async (req, res) => {
         error: msg,
         upstreamStatus: response.status,
         upstreamBody: decoded,
+        mode: qrCall.mode,
       });
     }
 
-    const refId =
-      (decoded && (decoded.refId || decoded.refid || decoded.RefId || decoded.refID)) || null;
+    const refId = qrCall.encryptedFallback
+      ? txnId
+      : (decoded && (decoded.refId || decoded.refid || decoded.RefId || decoded.refID)) || null;
     const respMerchantTranId =
       (decoded && (decoded.merchantTranId || decoded.merchantTranID)) || txnId;
 
@@ -3763,7 +3961,8 @@ app.post("/api/payments/icici/qr", async (req, res) => {
       refId,
       qrString: `upi://pay?${params.toString()}`,
       paymentTransactionId,
-      upstream: decoded,
+      upstream: qrCall.encryptedFallback ? qrCall.rawText : decoded,
+      encryptedFallback: Boolean(qrCall.encryptedFallback),
     });
   } catch (error) {
     console.error("ICICI QR generation error", error);

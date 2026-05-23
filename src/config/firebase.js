@@ -11,6 +11,25 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
+const requiredFirebaseKeys = [
+  "apiKey",
+  "authDomain",
+  "projectId",
+  "storageBucket",
+  "messagingSenderId",
+  "appId",
+];
+
+const missingFirebaseKeys = requiredFirebaseKeys.filter(
+  (key) => !String(firebaseConfig[key] || "").trim()
+);
+
+if (missingFirebaseKeys.length) {
+  throw new Error(
+    `Missing Firebase web config: ${missingFirebaseKeys.join(", ")}. Set VITE_FIREBASE_* values in the root .env file and restart Vite.`
+  );
+}
+
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
